@@ -25,7 +25,7 @@ pub struct Options {
     // )]
     // pub schemas: Vec<String>,
     #[clap(short, long, about = "server port", default_value = "3000")]
-    pub port: i32,
+    pub port: u16,
 }
 
 pub fn parsed_options() -> Options {
