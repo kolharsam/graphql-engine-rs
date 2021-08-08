@@ -7,12 +7,18 @@ mod utils;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct QualifiedTable {
+    #[serde(rename = "schema", default = "to_public_schema")]
     pub schema_name: String,
+    #[serde(rename = "table")]
     pub table_name: String,
 }
 
+fn to_public_schema() -> String {
+    "public".to_string()
+}
+
 impl QualifiedTable {
-    fn to_string(&self) -> &'static str {
+    fn to_string(&self) -> String {
         format!(
             "{}:{}",
             utils::dqote(&self.schema_name.clone()),
@@ -43,7 +49,7 @@ impl Metadata {
         self.connection_string = connection_string;
     }
 
-    fn is_table_tracked(&self, qualified_table: QualifiedTable) -> bool {
+    fn is_table_tracked(&self, qualified_table: &QualifiedTable) -> bool {
         for table in self.tables.iter() {
             if table.schema_name == qualified_table.schema_name
                 && table.table_name == qualified_table.table_name
@@ -57,24 +63,27 @@ impl Metadata {
 
     pub fn track_table(
         &mut self,
-        qualified_table: QualifiedTable,
+        qualified_table: &QualifiedTable,
     ) -> Result<(), error::GQLRSError> {
         if self.is_table_tracked(qualified_table) {
             return Err(error::GQLRSError {
-                kind: error::GQLRSErrorType::TableAlreadyTracked(&qualified_table.to_string()),
+                kind: error::GQLRSErrorType::TableAlreadyTracked(qualified_table.to_string()),
             });
         }
-        self.tables.push(qualified_table);
+        self.tables.push(QualifiedTable {
+            schema_name: qualified_table.schema_name.to_string(),
+            table_name: qualified_table.table_name.to_string(),
+        });
         Ok(())
     }
 
     pub fn untrack_table(
         &mut self,
-        qualified_table: QualifiedTable,
+        qualified_table: &QualifiedTable,
     ) -> Result<(), error::GQLRSError> {
         if !self.is_table_tracked(qualified_table) {
             return Err(error::GQLRSError {
-                kind: error::GQLRSErrorType::TableNotFoundInMetadata(&qualified_table.to_string()),
+                kind: error::GQLRSErrorType::TableNotFoundInMetadata(qualified_table.to_string()),
             });
         }
         // TODO: remove the table from the metadata
