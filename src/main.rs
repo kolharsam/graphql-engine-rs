@@ -1,4 +1,4 @@
-use log::{debug, error, info, trace, warn};
+use log::{debug, info, trace, warn};
 
 mod logger;
 mod options;
@@ -6,6 +6,8 @@ mod server;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    std::env::set_var("RUST_LOG", "actix_web=info");
+
     debug!("Setting up logger...");
     logger::setup_logging().expect("Failed to set up the logger");
 
@@ -19,16 +21,30 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting up API server on port {}", serve_options.port);
 
-    // let gqlrs_figment = rocket::Config::figment().merge(("port", serve_options.port));
-
-    let server_result = rocket::custom(gqlrs_figment)
-        .mount(
-            "/",
-            rocket::routes![server::healthz, server::metadata_route],
-        )
-        .launch()
-        .await;
-    if server_result.is_err() {
-        error!("Failure in API server: {:?}", server_result.unwrap_err());
-    }
+    actix_web::HttpServer::new(|| {
+        actix_web::App::new()
+            .wrap(actix_web::middleware::Logger::default())
+            .service(
+                actix_web::web::resource("/healthz")
+                    .route(actix_web::web::get().to(server::healthz)),
+            )
+            .service(
+                actix_web::web::resource("/v1/metadata")
+                    .route(actix_web::web::post().to(server::metadata_route)),
+            )
+            .default_service(
+                // 404 for GET request
+                actix_web::web::resource("")
+                    .route(actix_web::web::get().to(actix_web::HttpResponse::NotFound))
+                    // all requests that are not `GET`
+                    .route(
+                        actix_web::web::route()
+                            .guard(actix_web::guard::Not(actix_web::guard::Get()))
+                            .to(actix_web::HttpResponse::MethodNotAllowed),
+                    ),
+            )
+    })
+    .bind(("127.0.0.1", serve_options.port))?
+    .run()
+    .await
 }
