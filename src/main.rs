@@ -1,5 +1,6 @@
 use actix_web::http;
 use log::{debug, info, trace, warn};
+
 mod logger;
 mod options;
 mod server;
@@ -34,11 +35,16 @@ async fn main() -> std::io::Result<()> {
             )
             .service(
                 actix_web::web::resource("/healthz")
-                    .route(actix_web::web::get().to(server::healthz)),
+                    .route(actix_web::web::get().to(server::healthz_handler)),
             )
+            // TODO: make the version "v1" as one `resource` and then add these routes there
             .service(
                 actix_web::web::resource("/v1/metadata")
-                    .route(actix_web::web::post().to(server::metadata_route)),
+                    .route(actix_web::web::post().to(server::metadata_handler)),
+            )
+            .service(
+                actix_web::web::resource("/v1/graphql")
+                    .route(actix_web::web::post().to(server::graphql_handler)),
             )
             .default_service(
                 // 404 for GET request
