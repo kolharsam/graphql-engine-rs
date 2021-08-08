@@ -1,5 +1,5 @@
 use log::{debug, info, trace, warn};
-
+use actix_web::{http};
 mod logger;
 mod options;
 mod server;
@@ -24,6 +24,12 @@ async fn main() -> std::io::Result<()> {
     actix_web::HttpServer::new(|| {
         actix_web::App::new()
             .wrap(actix_web::middleware::Logger::default())
+            .wrap(actix_cors::Cors::default()
+            .allow_any_origin()
+            .allowed_methods(vec!["GET", "POST"])
+            .allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
+            .allowed_header(http::header::CONTENT_TYPE)
+            .max_age(3600))
             .service(
                 actix_web::web::resource("/healthz")
                     .route(actix_web::web::get().to(server::healthz)),
