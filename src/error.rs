@@ -1,9 +1,9 @@
 #[derive(Debug)]
 pub enum GQLRSErrorType {
-    GenericError(&'static str),
-    TableAlreadyTracked(&'static str),
-    TableNotFoundInMetadata(&'static str),
-    DBConnectionError(&'static str),
+    GenericError(String),
+    TableAlreadyTracked(String),
+    TableNotFoundInMetadata(String),
+    DBConnectionError(String),
     InvalidInput,
 }
 
@@ -15,7 +15,11 @@ impl std::fmt::Display for GQLRSErrorType {
                 write!(f, "ERROR: Table {} is already tracked", qualified_table_str)
             }
             GQLRSErrorType::TableNotFoundInMetadata(qualified_table_str) => {
-                write!(f, "ERROR: Table {} not found in metadata", qualified_table_str)
+                write!(
+                    f,
+                    "ERROR: Table {} not found in metadata",
+                    qualified_table_str
+                )
             }
             GQLRSErrorType::DBConnectionError(connection_string) => write!(
                 f,
@@ -30,7 +34,7 @@ impl std::fmt::Display for GQLRSErrorType {
 impl std::error::Error for GQLRSErrorType {}
 
 pub struct GQLRSError {
-    kind: GQLRSErrorType,
+    pub kind: GQLRSErrorType,
 }
 
 impl GQLRSError {
