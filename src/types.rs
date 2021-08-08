@@ -17,10 +17,11 @@ fn to_public_schema() -> String {
     "public".to_string()
 }
 
-impl QualifiedTable {
-    fn to_string(&self) -> String {
-        format!(
-            "{}:{}",
+impl std::fmt::Display for QualifiedTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}.{}",
             utils::dqote(&self.schema_name.clone()),
             utils::dqote(&self.table_name.clone())
         )
@@ -31,7 +32,6 @@ impl QualifiedTable {
 pub struct Metadata {
     pub source_name: String,
     pub connection_string: String,
-    // #[serde(deserialize_with = "string_or_seq_string")]
     pub tables: Vec<QualifiedTable>,
 }
 
