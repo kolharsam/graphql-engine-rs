@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 
 #[path = "./context.rs"]
 mod context;
+#[path = "./error.rs"]
+mod error;
 #[path = "./types.rs"]
 mod types;
 
@@ -69,8 +71,64 @@ pub struct GraphQLRequest {
     variables: std::collections::HashMap<String, String>,
 }
 
-// NOTE: this is only for Query and Mutation will have to
-// implement something different for Subscriptions
+fn fetch_result_from_query_fields<'a>(
+    qry: &graphql_parser::query::Query<'a, &'a str>,
+) -> actix_web::HttpResponse {
+    let mut fields_map: indexmap::IndexMap<String, Vec<String>> =
+        indexmap::IndexMap::new();
+
+    for set in qry.selection_set.items.iter() {
+        if let graphql_parser::query::Selection::Field(field) = set {
+            // FIXME: make this recursive too, this is just one level now...
+            let table_name = field.name.to_string();
+            let query_fields = selection_set_fields_parser(&field.selection_set);
+            fields_map.insert(table_name, query_fields);
+        }
+    }
+
+    // TODO: make the query to DB, fetch result, format and respond
+    actix_web::HttpResponse::Ok().json(ErrorResponse {
+        error: format!("{:?}", fields_map),
+    })
+}
+
+fn selection_set_fields_parser<'a>(
+    sel_set: &graphql_parser::query::SelectionSet<'a, &'a str>,
+) -> Vec<String> {
+    let mut fields: Vec<String> = Vec::new();
+
+    // TODO: aliases are also not supported
+    for set_item in sel_set.items.iter() {
+        if let graphql_parser::query::Selection::Field(fld) = set_item {
+            fields.push(fld.name.to_string());
+        }
+    }
+
+    fields
+}
+
+fn fetch_result_from_selection_set<'a>(
+    sel_set: &graphql_parser::query::SelectionSet<'a, &'a str>,
+) -> actix_web::HttpResponse {
+    let mut fields_map: indexmap::IndexMap<String, Vec<String>> =
+        indexmap::IndexMap::new();
+
+    for set_item in sel_set.items.iter() {
+        if let graphql_parser::query::Selection::Field(fld) = set_item {
+            fields_map.insert(
+                fld.name.to_string(),
+                selection_set_fields_parser(&fld.selection_set),
+            );
+        }
+    }
+
+    actix_web::HttpResponse::Ok().json(ErrorResponse {
+        error: format!("{:?}", fields_map),
+    })
+}
+
+// NOTE: this is only for Query, Selection sets Mutation(which are currently not supported)
+//       will have to implement something different for Subscriptions.
 pub async fn graphql_handler(payload: actix_web::web::Bytes) -> actix_web::HttpResponse {
     let parse_result = json::parse(std::str::from_utf8(&payload).unwrap());
 
@@ -85,17 +143,57 @@ pub async fn graphql_handler(payload: actix_web::web::Bytes) -> actix_web::HttpR
             match graphql_parser::parse_query::<&str>(&b.query) {
                 Ok(q) => {
                     for i in q.definitions.iter() {
-                        println!("{:?}", i)
+                        match i {
+                            graphql_parser::query::Definition::Fragment(_) => {
+                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                    error: error::GQLRSError {
+                                        kind: error::GQLRSErrorType::GenericError(
+                                            "Fragments are not yet supported!".to_string(),
+                                        ),
+                                    }
+                                    .to_string(),
+                                })
+                            }
+                            graphql_parser::query::Definition::Operation(op) => match op {
+                                graphql_parser::query::OperationDefinition::Mutation(_) => {
+                                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                        error: error::GQLRSError {
+                                            kind: error::GQLRSErrorType::GenericError(
+                                                "Mutations are not yet supported!".to_string(),
+                                            ),
+                                        }
+                                        .to_string(),
+                                    })
+                                }
+                                graphql_parser::query::OperationDefinition::Subscription(_) => {
+                                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                        error: error::GQLRSError {
+                                            kind: error::GQLRSErrorType::GenericError(
+                                                "Subscriptions are not yet supported!".to_string(),
+                                            ),
+                                        }
+                                        .to_string(),
+                                    })
+                                }
+                                graphql_parser::query::OperationDefinition::Query(qry) => {
+                                    return fetch_result_from_query_fields(qry)
+                                }
+                                graphql_parser::query::OperationDefinition::SelectionSet(
+                                    sel_set,
+                                ) => return fetch_result_from_selection_set(sel_set),
+                            },
+                        }
                     }
                 }
-                Err(e) => return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                    error: e.to_string(),
-                })
+                Err(e) => {
+                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                        error: e.to_string(),
+                    })
+                }
             }
-
-            actix_web::HttpResponse::Ok()
-                .content_type("application/json")
-                .body(serde_json::to_string(&b).unwrap())
+            actix_web::HttpResponse::Ok().json(error::GQLRSError {
+                kind: error::GQLRSErrorType::GenericError("Unsolicited error".to_string()),
+            })
         }
         Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
             error: e.to_string(),
