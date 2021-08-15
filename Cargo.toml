@@ -22,6 +22,7 @@ env_logger = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 json = "0.12"
 actix-cors = "0.5.4"
+indexmap = "1.7.0"
 
 [dev-dependencies]
 lazy_static = "1.4.0"
