@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub enum GQLRSErrorType {
     GenericError(String),
     TableAlreadyTracked(String),
@@ -33,6 +33,7 @@ impl std::fmt::Display for GQLRSErrorType {
 
 impl std::error::Error for GQLRSErrorType {}
 
+#[derive(serde::Serialize)]
 pub struct GQLRSError {
     pub kind: GQLRSErrorType,
 }
