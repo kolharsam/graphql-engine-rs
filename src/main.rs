@@ -4,6 +4,7 @@ use log::{debug, info, trace, warn};
 mod logger;
 mod options;
 mod server;
+mod utils;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -22,8 +23,12 @@ async fn main() -> std::io::Result<()> {
 
     info!("Starting up API server on port {}", serve_options.port);
 
-    actix_web::HttpServer::new(|| {
+    let connection_string = utils::string_to_static_str(serve_options.connection_string.clone());
+
+    actix_web::HttpServer::new(move || {
         actix_web::App::new()
+            // TODO: eventually, this would be the server ctx
+            .data(connection_string.clone())
             .wrap(actix_web::middleware::Logger::default())
             .wrap(
                 actix_cors::Cors::default()
