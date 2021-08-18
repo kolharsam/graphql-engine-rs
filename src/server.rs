@@ -86,13 +86,14 @@ fn fetch_result_from_query_fields<'a>(
     client: &mut Client,
 ) -> actix_web::HttpResponse {
     let mut fields_map: indexmap::IndexMap<String, Vec<String>> = indexmap::IndexMap::new();
+    let mut query_fields: Vec<String> = Vec::new();
 
     for set in qry.selection_set.items.iter() {
         if let graphql_parser::query::Selection::Field(field) = set {
             // FIXME: make this recursive too, this is just one level now...
             let table_name = field.name.to_string();
-            let query_fields = selection_set_fields_parser(&field.selection_set);
-            fields_map.insert(table_name, query_fields);
+            query_fields.append(&mut selection_set_fields_parser(&field.selection_set));
+            fields_map.insert(table_name, query_fields.clone());
         }
     }
 
@@ -107,6 +108,8 @@ fn fetch_result_from_query_fields<'a>(
         let root_field_name = res_row.columns()[0].name();
         let query_result: Json<serde_json::Value> = res_row.get(root_field_name.clone());
         final_res.insert(root_field_name.to_string(), query_result.0);
+        // TODO: remove this after adding some tests
+        // final_res.insert(root_field_name.to_string(), utils::remap_json(query_result.0, &query_fields));
     }
 
     actix_web::HttpResponse::Ok().json(DataResponse { data: final_res })

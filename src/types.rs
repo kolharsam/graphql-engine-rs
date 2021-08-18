@@ -22,8 +22,8 @@ impl std::fmt::Display for QualifiedTable {
         write!(
             f,
             "{}.{}",
-            utils::dqote(&self.schema_name.clone()),
-            utils::dqote(&self.table_name.clone())
+            utils::dquote(&self.schema_name.clone()),
+            utils::dquote(&self.table_name.clone())
         )
     }
 }
