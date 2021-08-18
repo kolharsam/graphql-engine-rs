@@ -1,6 +1,6 @@
 use clap::Clap;
 
-#[derive(Clap, Debug)]
+#[derive(Clap, Debug, Clone)]
 #[clap(
     name = "graphql-engine-rs",
     about = "An implementation of the Hasura GraphQL Engine using rust",
