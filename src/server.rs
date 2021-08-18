@@ -1,7 +1,11 @@
+use postgres::types::Json;
+use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
 
 #[path = "./context.rs"]
 mod context;
+#[path = "./db.rs"]
+mod db;
 #[path = "./error.rs"]
 mod error;
 #[path = "./types.rs"]
@@ -34,6 +38,12 @@ pub struct ErrorResponse {
     error: String,
 }
 
+// NOTE: this should be used for sending the API response
+#[derive(Serialize, Debug, Clone)]
+pub struct DataResponse {
+    data: indexmap::IndexMap<String, serde_json::Value>,
+}
+
 pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::HttpResponse {
     let parse_result = json::parse(std::str::from_utf8(&payload).unwrap());
 
@@ -60,22 +70,22 @@ pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::Http
     // })
 }
 
-fn empty_query_variables() -> std::collections::HashMap<String, String> {
-    std::collections::HashMap::new()
+fn empty_query_variables() -> indexmap::IndexMap<String, String> {
+    indexmap::IndexMap::new()
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GraphQLRequest {
     query: String,
     #[serde(default = "empty_query_variables")]
-    variables: std::collections::HashMap<String, String>,
+    variables: indexmap::IndexMap<String, String>,
 }
 
 fn fetch_result_from_query_fields<'a>(
     qry: &graphql_parser::query::Query<'a, &'a str>,
+    client: &mut Client,
 ) -> actix_web::HttpResponse {
-    let mut fields_map: indexmap::IndexMap<String, Vec<String>> =
-        indexmap::IndexMap::new();
+    let mut fields_map: indexmap::IndexMap<String, Vec<String>> = indexmap::IndexMap::new();
 
     for set in qry.selection_set.items.iter() {
         if let graphql_parser::query::Selection::Field(field) = set {
@@ -86,10 +96,20 @@ fn fetch_result_from_query_fields<'a>(
         }
     }
 
-    // TODO: make the query to DB, fetch result, format and respond
-    actix_web::HttpResponse::Ok().json(ErrorResponse {
-        error: format!("{:?}", fields_map),
-    })
+    let mut result_rows: Vec<Row> = Vec::new();
+    for field_info in fields_map.iter() {
+        result_rows.push(db::get_rows_gql_query(client, field_info.0, field_info.1));
+    }
+
+    let mut final_res: indexmap::IndexMap<String, serde_json::Value> = indexmap::IndexMap::new();
+
+    for res_row in result_rows.iter() {
+        let root_field_name = res_row.columns()[0].name();
+        let query_result: Json<serde_json::Value> = res_row.get(root_field_name.clone());
+        final_res.insert(root_field_name.to_string(), query_result.0);
+    }
+
+    actix_web::HttpResponse::Ok().json(DataResponse { data: final_res })
 }
 
 fn selection_set_fields_parser<'a>(
@@ -109,9 +129,9 @@ fn selection_set_fields_parser<'a>(
 
 fn fetch_result_from_selection_set<'a>(
     sel_set: &graphql_parser::query::SelectionSet<'a, &'a str>,
+    _client: &mut Client,
 ) -> actix_web::HttpResponse {
-    let mut fields_map: indexmap::IndexMap<String, Vec<String>> =
-        indexmap::IndexMap::new();
+    let mut fields_map: indexmap::IndexMap<String, Vec<String>> = indexmap::IndexMap::new();
 
     for set_item in sel_set.items.iter() {
         if let graphql_parser::query::Selection::Field(fld) = set_item {
@@ -129,7 +149,13 @@ fn fetch_result_from_selection_set<'a>(
 
 // NOTE: this is only for Query, Selection sets Mutation(which are currently not supported)
 //       will have to implement something different for Subscriptions.
-pub async fn graphql_handler(payload: actix_web::web::Bytes) -> actix_web::HttpResponse {
+pub async fn graphql_handler(
+    srv_ctx: actix_web::web::Data<&'static str>,
+    payload: actix_web::web::Bytes,
+) -> actix_web::HttpResponse {
+    let conn_str = srv_ctx.get_ref();
+    let mut pg_client = db::get_pg_client(conn_str.to_string());
+
     let parse_result = json::parse(std::str::from_utf8(&payload).unwrap());
 
     // FIXME?: is this even necessary?
@@ -176,11 +202,13 @@ pub async fn graphql_handler(payload: actix_web::web::Bytes) -> actix_web::HttpR
                                     })
                                 }
                                 graphql_parser::query::OperationDefinition::Query(qry) => {
-                                    return fetch_result_from_query_fields(qry)
+                                    return fetch_result_from_query_fields(qry, &mut pg_client)
                                 }
                                 graphql_parser::query::OperationDefinition::SelectionSet(
                                     sel_set,
-                                ) => return fetch_result_from_selection_set(sel_set),
+                                ) => {
+                                    return fetch_result_from_selection_set(sel_set, &mut pg_client)
+                                }
                             },
                         }
                     }
