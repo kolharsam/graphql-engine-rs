@@ -3,7 +3,7 @@ use clap::Clap;
 #[derive(Clap, Debug, Clone)]
 #[clap(
     name = "graphql-engine-rs",
-    about = "An implementation of the Hasura GraphQL Engine using rust",
+    about = "An (UNOFFICIAL) implementation of the Hasura GraphQL Engine using rust",
     version = "0.1.0",
     author = "Sameer Kolhar <sameer@hasura.io>"
 )]

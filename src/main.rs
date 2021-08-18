@@ -59,7 +59,7 @@ async fn main() -> std::io::Result<()> {
                     .route(
                         actix_web::web::route()
                             .guard(actix_web::guard::Not(actix_web::guard::Get()))
-                            .to(actix_web::HttpResponse::MethodNotAllowed),
+                            .to(actix_web::HttpResponse::NotFound),
                     ),
             )
     })
