@@ -1,9 +1,13 @@
 use actix_web::http;
 use log::{debug, info, trace, warn};
 
+mod context;
+mod db;
+mod error;
 mod logger;
 mod options;
 mod server;
+mod types;
 mod utils;
 
 #[actix_web::main]

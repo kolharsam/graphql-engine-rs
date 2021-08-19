@@ -2,14 +2,10 @@ use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
 
-#[path = "./context.rs"]
-mod context;
-#[path = "./db.rs"]
-mod db;
-#[path = "./error.rs"]
-mod error;
-#[path = "./types.rs"]
-mod types;
+// use crate::context;
+use crate::db;
+use crate::error;
+use crate::types;
 
 pub async fn healthz_handler(_req: actix_web::HttpRequest) -> String {
     // actix_web::HttpResponse::Ok().json(json!({"Ok": true}))

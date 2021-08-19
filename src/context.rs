@@ -1,6 +1,6 @@
 use postgres::Client;
 
-mod types;
+use crate::types;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Status {
