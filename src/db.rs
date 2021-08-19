@@ -1,6 +1,5 @@
+use crate::error;
 use postgres::{Client, NoTls, Row};
-#[path = "./error.rs"]
-mod error;
 
 pub fn get_pg_client(connection_string: String) -> Client {
     let client = Client::connect(&connection_string, NoTls);

@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-#[path = "./error.rs"]
-mod error;
-#[path = "./utils.rs"]
-mod utils;
+use crate::error;
+use crate::utils;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct QualifiedTable {
