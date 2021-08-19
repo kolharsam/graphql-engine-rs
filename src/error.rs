@@ -1,37 +1,44 @@
-#[derive(Debug, serde::Serialize)]
+use thiserror::Error;
+
+#[derive(Error, Debug, serde::Serialize)]
 pub enum GQLRSErrorType {
+    #[error("ERROR: `{0}`")]
     GenericError(String),
+    #[error("ERROR: Table `{0}` is already tracked")]
     TableAlreadyTracked(String),
+    #[error("ERROR: Table {0} not found in metadata")]
     TableNotFoundInMetadata(String),
+    #[error("Error: failed to connect with database at {0}")]
     DBConnectionError(String),
+    #[error("ERROR: Invalid input was supplied.")]
     InvalidInput,
 }
 
-impl std::fmt::Display for GQLRSErrorType {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            GQLRSErrorType::GenericError(msg) => write!(f, "ERROR: {}", msg),
-            GQLRSErrorType::TableAlreadyTracked(qualified_table_str) => {
-                write!(f, "ERROR: Table {} is already tracked", qualified_table_str)
-            }
-            GQLRSErrorType::TableNotFoundInMetadata(qualified_table_str) => {
-                write!(
-                    f,
-                    "ERROR: Table {} not found in metadata",
-                    qualified_table_str
-                )
-            }
-            GQLRSErrorType::DBConnectionError(connection_string) => write!(
-                f,
-                "Error: failed to connect with database at {}",
-                connection_string
-            ),
-            GQLRSErrorType::InvalidInput => write!(f, "ERROR: Invalid input was supplied."),
-        }
-    }
-}
+// impl std::fmt::Display for GQLRSErrorType {
+//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+//         match self {
+//             GQLRSErrorType::GenericError(msg) => write!(f, "ERROR: {}", msg),
+//             GQLRSErrorType::TableAlreadyTracked(qualified_table_str) => {
+//                 write!(f, "ERROR: Table {} is already tracked", qualified_table_str)
+//             }
+//             GQLRSErrorType::TableNotFoundInMetadata(qualified_table_str) => {
+//                 write!(
+//                     f,
+//                     "ERROR: Table {} not found in metadata",
+//                     qualified_table_str
+//                 )
+//             }
+//             GQLRSErrorType::DBConnectionError(connection_string) => write!(
+//                 f,
+//                 "Error: failed to connect with database at {}",
+//                 connection_string
+//             ),
+//             GQLRSErrorType::InvalidInput => write!(f, "ERROR: Invalid input was supplied."),
+//         }
+//     }
+// }
 
-impl std::error::Error for GQLRSErrorType {}
+// impl std::error::Error for GQLRSErrorType {}
 
 #[derive(serde::Serialize)]
 pub struct GQLRSError {
