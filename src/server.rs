@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::db;
 use crate::error;
 use crate::types::{FieldName, QualifiedTable};
-use crate::utils;
 
 pub async fn healthz_handler(_req: actix_web::HttpRequest) -> String {
     // actix_web::HttpResponse::Ok().json(json!({"Ok": true}))
@@ -164,7 +163,7 @@ fn fetch_result_from_selection_set<'a>(
 
     for set_item in sel_set.items.iter() {
         if let graphql_parser::query::Selection::Field(fld) = set_item {
-           let alias = fld.alias.map(String::from);
+            let alias = fld.alias.map(String::from);
             let root_field_name = FieldName::new(fld.name, alias);
             fields_map.insert(
                 root_field_name,
