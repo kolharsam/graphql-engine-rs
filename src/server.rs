@@ -148,7 +148,7 @@ fn selection_set_fields_parser<'a>(
 
     for set_item in sel_set.items.iter() {
         if let graphql_parser::query::Selection::Field(fld) = set_item {
-            let alias: Option<String> = utils::optional_fmap(fld.alias, |&s| s.to_string());
+            let alias = fld.alias.map(String::from);
             fields.push(FieldName::new(fld.name, alias));
         }
     }
