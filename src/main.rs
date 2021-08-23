@@ -32,7 +32,7 @@ async fn main() -> std::io::Result<()> {
     actix_web::HttpServer::new(move || {
         actix_web::App::new()
             // TODO: eventually, this would be the server ctx
-            .data(connection_string.clone())
+            .data(<&str>::clone(&connection_string))
             .wrap(actix_web::middleware::Logger::default())
             .wrap(
                 actix_cors::Cors::default()

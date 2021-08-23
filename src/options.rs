@@ -5,7 +5,7 @@ use clap::Clap;
     name = "graphql-engine-rs",
     about = "An (UNOFFICIAL) implementation of the Hasura GraphQL Engine using rust",
     version = "0.1.0",
-    author = "Sameer Kolhar <sameer@hasura.io>"
+    author = "Sameer Kolhar <kolhar.sam@gmail.com>"
 )]
 pub struct Options {
     #[clap(
@@ -17,13 +17,6 @@ pub struct Options {
     pub source_name: String,
     #[clap(short, long, about = "the connection string to a PG data source")]
     pub connection_string: String,
-    // TODO: consider to put this in later, maybe not just yet
-    // #[clap(
-    //     long,
-    //     default_value = "[\"public\"]",
-    //     about = "the schema(s) that should be scanned to generate the GraphQL schema"
-    // )]
-    // pub schemas: Vec<String>,
     #[clap(short, long, about = "server port", default_value = "3000")]
     pub port: u16,
 }
