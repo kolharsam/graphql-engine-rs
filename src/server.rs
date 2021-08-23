@@ -90,7 +90,7 @@ fn fetch_result_from_query_fields<'a>(
         if let graphql_parser::query::Selection::Field(field) = set {
             // FIXME: make this recursive too, this is just one level now...
             let table_name = field.name.to_string();
-            let alias: Option<String> = utils::optional_fmap(field.alias, |&s| s.to_string());
+            let alias = field.alias.map(String::from);
             let root_field_name = FieldName::new(&table_name, alias);
             fields_map.insert(
                 root_field_name,
