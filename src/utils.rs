@@ -24,10 +24,3 @@ pub fn to_lower_case(s: &str) -> String {
 pub fn string_to_static_str(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
-
-pub fn optional_fmap<T, U>(op: Option<T>, map_fn: fn(&T) -> U) -> Option<U> {
-    if let Some(t) = op {
-        return Some(map_fn(&t));
-    }
-    None
-}
