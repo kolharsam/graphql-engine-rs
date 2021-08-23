@@ -164,7 +164,7 @@ fn fetch_result_from_selection_set<'a>(
 
     for set_item in sel_set.items.iter() {
         if let graphql_parser::query::Selection::Field(fld) = set_item {
-            let alias: Option<String> = utils::optional_fmap(fld.alias, |&s| s.to_string());
+           let alias = fld.alias.map(String::from);
             let root_field_name = FieldName::new(fld.name, alias);
             fields_map.insert(
                 root_field_name,
