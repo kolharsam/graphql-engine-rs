@@ -8,9 +8,7 @@ use crate::error;
 use crate::types::{FieldName, QualifiedTable};
 
 pub async fn healthz_handler(_req: actix_web::HttpRequest) -> String {
-    // actix_web::HttpResponse::Ok().json(json!({"Ok": true}))
     "OK".to_string()
-    // actix_web::HttpResponse::Ok().finish()
     // TODO: add something for "ERROR"
 }
 
@@ -80,12 +78,15 @@ pub struct GraphQLRequest {
 type GQLResult = indexmap::IndexMap<String, serde_json::Value>;
 
 fn fetch_result_from_query_fields<'a>(
-    qry: &graphql_parser::query::Query<'a, &'a str>,
-    client: &mut Client,
+    qry_sel_set: &graphql_parser::query::SelectionSet<'a, &'a str>,
+    // NOTE: since we're not using any specific information from the query we could
+    // move to using the selection set without having to duplicating code for
+    // many of the patterns, like Query, Selection Set and eventually Subscriptions!
+    pg_client: &mut Client,
 ) -> actix_web::HttpResponse {
     let mut fields_map: indexmap::IndexMap<FieldName, Vec<FieldName>> = indexmap::IndexMap::new();
 
-    for set in qry.selection_set.items.iter() {
+    for set in qry_sel_set.items.iter() {
         if let graphql_parser::query::Selection::Field(field) = set {
             // FIXME: make this recursive too, this is just one level now...
             let table_name = field.name.to_string();
@@ -100,7 +101,10 @@ fn fetch_result_from_query_fields<'a>(
 
     let mut result_rows: Vec<Row> = Vec::new();
     for field_info in fields_map.iter() {
-        let query_res = db::get_rows_gql_query(client, field_info.0, field_info.1);
+        let root_field_name = field_info.0;
+        let fields = field_info.1;
+
+        let query_res = db::get_rows_gql_query(pg_client, root_field_name, fields);
         match query_res {
             Ok(db_res) => {
                 result_rows.push(db_res);
@@ -127,7 +131,7 @@ fn fetch_result_from_query_fields<'a>(
             }
             // NOTE: this error is reported when we encounter no rows or nulls
             Err(_err) => {
-                // NOTE: this is not consistent with Hasura's behavior, in Hasura,
+                // FIXME: this is not consistent with Hasura's behavior, in Hasura,
                 // all of the columns in the query are placed with a `null`
                 final_res.insert(
                     root_field_name.to_string(),
@@ -153,29 +157,6 @@ fn selection_set_fields_parser<'a>(
     }
 
     fields
-}
-
-fn fetch_result_from_selection_set<'a>(
-    sel_set: &graphql_parser::query::SelectionSet<'a, &'a str>,
-    _client: &mut Client,
-) -> actix_web::HttpResponse {
-    let mut fields_map: indexmap::IndexMap<FieldName, Vec<FieldName>> = indexmap::IndexMap::new();
-
-    for set_item in sel_set.items.iter() {
-        if let graphql_parser::query::Selection::Field(fld) = set_item {
-            let alias = fld.alias.map(String::from);
-            let root_field_name = FieldName::new(fld.name, alias);
-            fields_map.insert(
-                root_field_name,
-                selection_set_fields_parser(&fld.selection_set),
-            );
-        }
-    }
-
-    // TODO: this shouldn't be here anymore :P
-    actix_web::HttpResponse::Ok().json(ErrorResponse {
-        error: format!("{:?}", fields_map),
-    })
 }
 
 // NOTE: Only GraphQL Queries and Selection Sets are supported.
@@ -225,10 +206,10 @@ pub async fn graphql_handler(
                         })
                     }
                     graphql_parser::query::OperationDefinition::Query(qry) => {
-                        fetch_result_from_query_fields(qry, &mut pg_client)
+                        fetch_result_from_query_fields(&qry.selection_set, &mut pg_client)
                     }
                     graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                        fetch_result_from_selection_set(sel_set, &mut pg_client)
+                        fetch_result_from_query_fields(sel_set, &mut pg_client)
                     }
                 },
             },
