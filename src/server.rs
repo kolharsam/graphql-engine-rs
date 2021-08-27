@@ -2,7 +2,6 @@ use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
 
-// use crate::context;
 use crate::db;
 use crate::error;
 use crate::types::{FieldName, QualifiedTable};
@@ -39,9 +38,12 @@ pub struct DataResponse {
 }
 
 pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::HttpResponse {
-    let parse_result = json::parse(std::str::from_utf8(&payload).unwrap());
+    let payload_to_str = std::str::from_utf8(&payload);
+    let parse_result = match payload_to_str {
+        Ok(r) => json::parse(r),
+        Err(_err) => Err(json::Error::FailedUtf8Parsing),
+    };
 
-    // FIXME?: is this even necessary?
     let body: json::JsonValue = match parse_result {
         Ok(v) => v,
         Err(e) => json::object! { "error" => e.to_string() },
@@ -50,7 +52,10 @@ pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::Http
     match serde_json::from_str::<'_, MetadataMessage>(&body.dump()) {
         Ok(b) => actix_web::HttpResponse::Ok()
             .content_type("application/json")
-            .body(serde_json::to_string(&b).unwrap()),
+            .body(
+                serde_json::to_string(&b)
+                    .unwrap_or("Failed to convert body to a valid string".to_string()),
+            ),
         Err(e) => actix_web::HttpResponse::build(actix_web::http::StatusCode::BAD_REQUEST).json(
             ErrorResponse {
                 error: e.to_string(),
@@ -168,9 +173,13 @@ pub async fn graphql_handler(
     let conn_str = srv_ctx.get_ref();
     let mut pg_client = db::get_pg_client(conn_str.to_string());
 
-    let parse_result = json::parse(std::str::from_utf8(&payload).unwrap());
+    let payload_to_str = std::str::from_utf8(&payload);
 
-    // FIXME?: is this even necessary?
+    let parse_result = match payload_to_str {
+        Ok(s) => json::parse(s),
+        Err(_err) => Err(json::Error::FailedUtf8Parsing),
+    };
+
     let body: json::JsonValue = match parse_result {
         Ok(v) => v,
         Err(e) => json::object! { "error" => e.to_string() },
@@ -214,10 +223,14 @@ pub async fn graphql_handler(
                 },
             },
             Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
+                // NOTE: this is the error when no valid AST was generated
+                // by the parser or any other parser failures
                 error: e.to_string(),
             }),
         },
         Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
+            // NOTE: this is the error when the parsed JSON is
+            // not of the type of GraphQLRequest
             error: e.to_string(),
         }),
     }
