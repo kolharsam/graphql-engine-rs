@@ -9,7 +9,7 @@ pub enum GQLRSErrorType {
     #[error("ERROR: Table {0} not found in metadata")]
     TableNotFoundInMetadata(String),
     #[error("Error: failed to connect with database at {0}")]
-    DBConnectionError(String),
+    DBError(String),
     #[error("ERROR: Invalid input was supplied.")]
     InvalidInput,
 }
