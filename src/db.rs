@@ -1,5 +1,7 @@
 use crate::error;
 use crate::types;
+use crate::types::GQLArgType;
+use indexmap::IndexMap;
 use postgres::{Client, NoTls, Row};
 
 pub fn get_pg_client(connection_string: String) -> Client {
@@ -12,6 +14,22 @@ pub fn get_pg_client(connection_string: String) -> Client {
             "{}",
             error::GQLRSError::new(error::GQLRSErrorType::DBError(e.to_string()))
         ),
+    }
+}
+
+#[inline]
+fn add_int_arg_to_query(
+    query_str: &mut String,
+    arg_name: &str,
+    arg_map: &IndexMap<String, GQLArgType>,
+) {
+    let uppercased_arg_name = arg_name.to_uppercase();
+    let arg_value = arg_map.get(arg_name);
+    match arg_value {
+        None => (),
+        Some(val) => {
+            query_str.push_str(format!("{} {} ", uppercased_arg_name, val.get_num()).as_str());
+        }
     }
 }
 
@@ -62,24 +80,14 @@ pub fn get_rows_gql_query(
 
     if query_has_args {
         for field_arg in types::SUPPORTED_INT_GQL_ARGUMENTS.iter() {
-            if (*field_arg) == "limit" {
-                let arg_val = field_info.root_field_arguments.get("limit");
-                match arg_val {
-                    None => {}
-                    Some(val) => {
-                        query.push_str(format!("LIMIT {} ", val.get_num()).as_str());
-                    }
+            match *field_arg {
+                "limit" => {
+                    add_int_arg_to_query(&mut query, "limit", &field_info.root_field_arguments);
                 }
-            }
-
-            if (*field_arg) == "offset" {
-                let arg_val = field_info.root_field_arguments.get("offset");
-                match arg_val {
-                    None => {}
-                    Some(val) => {
-                        query.push_str(format!("OFFSET {} ", val.get_num()).as_str());
-                    }
+                "offset" => {
+                    add_int_arg_to_query(&mut query, "offset", &field_info.root_field_arguments);
                 }
+                _ => (),
             }
         }
     }
