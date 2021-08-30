@@ -215,7 +215,7 @@ pub fn to_string_arg<'a>(
     }
 
     Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-        "failed to parse string".to_string(),
+        format!("failed to parse argument {}", arg_name),
     )))
 }
 
