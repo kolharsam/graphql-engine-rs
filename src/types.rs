@@ -107,7 +107,11 @@ impl FieldName {
             alias = a;
         }
 
-        format!("{} AS {}", utils::dquote(self.1.as_str()), alias)
+        format!(
+            "{} AS {}",
+            utils::dquote(self.1.as_str()),
+            utils::dquote(&alias)
+        )
     }
 
     pub fn name(&self) -> String {
@@ -116,10 +120,10 @@ impl FieldName {
 
     pub fn alias(&self) -> String {
         if let Some(alias) = self.0.clone() {
-            return alias;
+            return utils::dquote(&alias);
         }
 
-        self.1.clone()
+        utils::dquote(&self.1)
     }
 }
 
