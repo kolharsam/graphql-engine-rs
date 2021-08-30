@@ -13,26 +13,15 @@ pub enum Message {
     ConnectionAck {
         payload: Option<HashMap<String, String>>,
     },
-    Start {
-        payload: HashMap<String, String>,
-        id: String,
-    },
     Error {
         payload: HashMap<String, String>,
-        id: String,
-    },
-    Stop {
         id: String,
     },
     Complete {
         id: String,
     },
-    Data {
-        payload: HashMap<String, String>,
-        id: String,
-    },
     Subscribe {
-        payload: HashMap<String, String>,
+        payload: MessagePayload,
         id: String,
     },
     Next {
@@ -47,4 +36,13 @@ pub enum Message {
     },
     #[serde(rename = "ka")]
     KeepAlive,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct MessagePayload {
+    extensions: Option<HashMap<String, String>>,
+    #[serde(rename = "camelCase")]
+    operation_name: Option<String>,
+    query: String,
+    variables: Option<HashMap<String, String>>,
 }
