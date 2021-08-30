@@ -92,10 +92,6 @@ pub fn get_rows_gql_query(
 
     let query_result = client.query_one(query.as_str(), &[]);
 
-    match query_result {
-        Ok(res) => Ok(res),
-        Err(err) => Err(error::GQLRSError::new(error::GQLRSErrorType::DBError(
-            format!("{:?}", err),
-        ))),
-    }
+    query_result
+        .map_err(|err| error::GQLRSError::new(error::GQLRSErrorType::DBError(format!("{:?}", err))))
 }
