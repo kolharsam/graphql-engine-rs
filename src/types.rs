@@ -141,7 +141,7 @@ pub fn field_names_to_name_list(nl: &[FieldName]) -> Vec<String> {
 #[test]
 fn field_name_to_sql_with_no_alias() {
     let new_field_name = FieldName::new("users", None);
-    assert_eq!(new_field_name.to_sql(), "\"users\" AS users".to_string());
+    assert_eq!(new_field_name.to_sql(), "\"users\" AS \"users\"".to_string());
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn field_name_to_sql_with_alias() {
     let new_field_name = FieldName::new("users", Some("new_users".to_string()));
     assert_eq!(
         new_field_name.to_sql(),
-        "\"users\" AS new_users".to_string()
+        "\"users\" AS \"new_users\"".to_string()
     );
 }
 
