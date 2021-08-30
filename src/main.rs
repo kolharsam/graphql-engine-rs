@@ -9,6 +9,7 @@ mod options;
 mod server;
 mod types;
 mod utils;
+mod ws;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
