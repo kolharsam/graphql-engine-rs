@@ -48,10 +48,7 @@ pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::Http
         Err(_err) => Err(json::Error::FailedUtf8Parsing),
     };
 
-    let body: json::JsonValue = match parse_result {
-        Ok(v) => v,
-        Err(e) => json::object! { "error" => e.to_string() },
-    };
+    let body = parse_result.unwrap_or_else(|e| json::object! { "error" => e.to_string() });
 
     match serde_json::from_str::<'_, MetadataMessage>(&body.dump()) {
         Ok(b) => actix_web::HttpResponse::Ok()
@@ -216,10 +213,7 @@ pub async fn graphql_handler(
         Err(_err) => Err(json::Error::FailedUtf8Parsing),
     };
 
-    let body: json::JsonValue = match parse_result {
-        Ok(v) => v,
-        Err(e) => json::object! { "error" => e.to_string() },
-    };
+    let body = parse_result.unwrap_or_else(|e| json::object! { "error" => e.to_string() });
 
     match serde_json::from_str::<'_, GraphQLRequest>(&body.dump()) {
         Ok(b) => match graphql_parser::parse_query::<&str>(&b.query) {
