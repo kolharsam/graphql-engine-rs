@@ -35,11 +35,10 @@ jobs:
     - name: Build project
       run: cargo build --verbose
 
-    - name: Install `psql`
-      run: sudo apt-get install -y postgresql-client
-
     - name: Setup basic schema on DB
-      run: psql postgresql://postgres:postgrespassword@localhost:5432/postgres -f schema.sql
+      run: |
+        ls 
+        psql postgresql://postgres:postgrespassword@localhost:5432/postgres -f test/schema.sql
 
     - name: Run tests
       run: cargo test --verbose
