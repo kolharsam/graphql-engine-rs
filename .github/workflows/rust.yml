@@ -36,7 +36,7 @@ jobs:
       run: cargo build --verbose
 
     - name: Install `psql`
-      run: apt-get install -y postgresql-client
+      run: sudo apt-get install -y postgresql-client
 
     - name: Setup basic schema on DB
       run: psql postgresql://postgres:postgrespassword@localhost:5432/postgres -f schema.sql
