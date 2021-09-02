@@ -71,3 +71,214 @@ async fn main() -> std::io::Result<()> {
     .run()
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use actix_web::{test, web, App};
+    use indexmap::IndexMap;
+
+    use crate::server;
+    use crate::utils::string_to_static_str;
+
+    const DEFAULT_DATABASE_URL: &str = "postgres://kolharsam@localhost:5434/eee";
+    // "postgresql://postgres:postgrespassword@localhost:5432/postgres"
+
+    #[actix_rt::test]
+    async fn test_healthz_ok() {
+        let req = test::TestRequest::default().to_http_request();
+        let resp = server::healthz_handler(req).await;
+        assert_eq!(resp, "OK");
+    }
+
+    #[actix_rt::test]
+    async fn test_graphql_basic() {
+        let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
+        let connection_string =
+            string_to_static_str(std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str));
+
+        let mut app =
+            test::init_service(App::new().data(connection_string).service(
+                web::resource("/v1/graphql").route(web::post().to(server::graphql_handler)),
+            ))
+            .await;
+
+        let data: server::GraphQLRequest = server::GraphQLRequest {
+            query: "query GetAuthors { authors { id \n author_name } }".to_string(),
+            variables: server::empty_query_variables(),
+        };
+
+        let payload = serde_json::to_string(&data).unwrap();
+
+        let req = test::TestRequest::post()
+            .uri("/v1/graphql")
+            .header("Content-Type", "application/json")
+            .set_payload(payload)
+            .to_request();
+
+        let result: server::DataResponse = test::read_response_json(&mut app, req).await;
+
+        let mut map: IndexMap<String, serde_json::Value> = IndexMap::new();
+        let mut item_vec: Vec<serde_json::Value> = Vec::new();
+        for (idx, item) in vec!["sam", "bam", "can", "of", "ham"].iter().enumerate() {
+            item_vec.push(serde_json::json!({
+                "id": idx+1,
+                "author_name": item
+            }));
+        }
+
+        map.insert(
+            "authors".to_string(),
+            serde_json::to_value(item_vec).unwrap(),
+        );
+
+        let check_result: server::DataResponse = server::DataResponse::new(map);
+
+        assert_eq!(result, check_result);
+    }
+
+    #[actix_rt::test]
+    async fn test_graphql_basic_with_aliases() {
+        let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
+        let connection_string =
+            string_to_static_str(std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str));
+
+        let mut app =
+            test::init_service(App::new().data(connection_string).service(
+                web::resource("/v1/graphql").route(web::post().to(server::graphql_handler)),
+            ))
+            .await;
+
+        let data: server::GraphQLRequest = server::GraphQLRequest {
+            query: "query GetAuthors { AUthors_TABLE : authors { author_id: id \n name: author_name } }"
+                .to_string(),
+            variables: server::empty_query_variables(),
+        };
+
+        let payload = serde_json::to_string(&data).unwrap();
+
+        let req = test::TestRequest::post()
+            .uri("/v1/graphql")
+            .header("Content-Type", "application/json")
+            .set_payload(payload)
+            .to_request();
+
+        let result: server::DataResponse = test::read_response_json(&mut app, req).await;
+
+        let mut map: IndexMap<String, serde_json::Value> = IndexMap::new();
+        let mut item_vec: Vec<serde_json::Value> = Vec::new();
+        for (idx, item) in vec!["sam", "bam", "can", "of", "ham"].iter().enumerate() {
+            item_vec.push(serde_json::json!({
+                "author_id": idx+1,
+                "name": item
+            }));
+        }
+
+        map.insert(
+            "AUthors_TABLE".to_string(),
+            serde_json::to_value(item_vec).unwrap(),
+        );
+
+        let check_result: server::DataResponse = server::DataResponse::new(map);
+
+        assert_eq!(result, check_result);
+    }
+
+    #[actix_rt::test]
+    async fn test_graphql_basic_for_json_key_ordering_in_response() {
+        let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
+        let connection_string =
+            string_to_static_str(std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str));
+
+        let mut app =
+            test::init_service(App::new().data(connection_string).service(
+                web::resource("/v1/graphql").route(web::post().to(server::graphql_handler)),
+            ))
+            .await;
+
+        let data: server::GraphQLRequest = server::GraphQLRequest {
+            query: "query GetAuthors { authors { name: author_name \n author_id: id } }"
+                .to_string(),
+            variables: server::empty_query_variables(),
+        };
+
+        let payload = serde_json::to_string(&data).unwrap();
+
+        let req = test::TestRequest::post()
+            .uri("/v1/graphql")
+            .header("Content-Type", "application/json")
+            .set_payload(payload)
+            .to_request();
+
+        let result: server::DataResponse = test::read_response_json(&mut app, req).await;
+
+        let mut map: IndexMap<String, serde_json::Value> = IndexMap::new();
+        let mut item_vec: Vec<serde_json::Value> = Vec::new();
+        for (idx, item) in vec!["sam", "bam", "can", "of", "ham"].iter().enumerate() {
+            item_vec.push(serde_json::json!({
+                "author_id": idx+1,
+                "name": item
+            }));
+        }
+
+        map.insert(
+            "authors".to_string(),
+            serde_json::to_value(item_vec).unwrap(),
+        );
+
+        let check_result: server::DataResponse = server::DataResponse::new(map);
+
+        assert_eq!(result, check_result);
+    }
+
+    #[actix_rt::test]
+    async fn test_graphql_basic_for_limit_offset_distinct_on_args_with_aliases() {
+        let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
+        let connection_string =
+            string_to_static_str(std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str));
+
+        let mut app =
+            test::init_service(App::new().data(connection_string).service(
+                web::resource("/v1/graphql").route(web::post().to(server::graphql_handler)),
+            ))
+            .await;
+
+        let data: server::GraphQLRequest = server::GraphQLRequest {
+            query: "query GetAuthors { 
+                authors(distinct_on: author_name, limit: 3, offset: 1) { 
+                    name: author_name
+                    author_id: id 
+                } 
+            }"
+            .to_string(),
+            variables: server::empty_query_variables(),
+        };
+
+        let payload = serde_json::to_string(&data).unwrap();
+
+        let req = test::TestRequest::post()
+            .uri("/v1/graphql")
+            .header("Content-Type", "application/json")
+            .set_payload(payload)
+            .to_request();
+
+        let result: server::DataResponse = test::read_response_json(&mut app, req).await;
+
+        let mut map: IndexMap<String, serde_json::Value> = IndexMap::new();
+        let mut item_vec: Vec<serde_json::Value> = Vec::new();
+        for (num, item) in vec![(3, "can"), (5, "ham"), (4, "of")].iter() {
+            item_vec.push(serde_json::json!({
+                "name": item,
+                "author_id": num
+            }));
+        }
+
+        map.insert(
+            "authors".to_string(),
+            serde_json::to_value(item_vec).unwrap(),
+        );
+
+        let check_result: server::DataResponse = server::DataResponse::new(map);
+
+        assert_eq!(result, check_result);
+    }
+}
