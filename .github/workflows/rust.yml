@@ -36,7 +36,9 @@ jobs:
       run: cargo build --verbose
 
     - name: Setup basic schema on DB
-      run: psql postgresql://postgres:postgrespassword@localhost:5432/postgres -f test/schema.sql
+      run: make migrate
+      env:
+        DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/postgres
 
     - name: Run tests
       run: cargo test --verbose
