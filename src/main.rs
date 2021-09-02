@@ -80,8 +80,8 @@ mod tests {
     use crate::server;
     use crate::utils::string_to_static_str;
 
-    const DEFAULT_DATABASE_URL: &str = "postgres://kolharsam@localhost:5434/eee";
-    // "postgresql://postgres:postgrespassword@localhost:5432/postgres"
+    const DEFAULT_DATABASE_URL: &str =
+        "postgresql://postgres:postgrespassword@localhost:5432/postgres";
 
     #[actix_rt::test]
     async fn test_healthz_ok() {
