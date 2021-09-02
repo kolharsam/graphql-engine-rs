@@ -4,7 +4,7 @@ The Hasura GraphQL Engine - in Rust
 
 This is not official. This is just a toy project. 
 
-We can run GraphQL queries as of now. More features related to the metadata, GraphQL schema (with introspection support)
+We can run GraphQL queries as of now. More features related to the metadata, GraphQL schema (with introspection support) subscriptions and so on...will be arriving soon!
 
 Here's a short clip of the same:
 
