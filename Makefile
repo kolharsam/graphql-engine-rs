@@ -9,7 +9,7 @@ test-clean:
 
 # Useful for setting up the schema in test DB
 migrate:
-	psql $(DATABASE_URL) -f test/schema.sql
+	psql $(DATABASE_URL) -f migrate/schema.sql
 
 dev:
 	cargo run -- -c $(DATABASE_URL)
