@@ -120,7 +120,7 @@ fn fetch_result_from_query_fields<'a>(
                                 field_args.insert(fa.0, fa.1);
                             } else {
                                 return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                    error: format!("The value should be one of: {:?}", str_fields),
+                                    error: format!("The value for `distinct_on` should be one of: {:?}", str_fields),
                                 });
                             }
                         } else if let Err(e) = convert_to_string_arg {
