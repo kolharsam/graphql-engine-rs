@@ -1,5 +1,6 @@
+.PHONY: test-clean test migrate
+
 # Runs all the tests with output to STDOUT
-.PHONY: all test clean
 test:
 	cargo test -- --nocapture
 
