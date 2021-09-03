@@ -13,6 +13,6 @@ https://user-images.githubusercontent.com/6604943/129950893-263d5785-3552-4f87-a
 ##### FOR RUNNING THE TEST SUITE
 
 - Use a env. var named `DATABASE_URL` to set the database that'll be used to run the tests.
-- Make sure to run the set up the database schema(s) for the tests from #[here](/test/schema.sql).
+- Make sure to run the set up the database schema(s) for the tests from [here](/test/schema.sql).
 
 More Documentation and Implementation details will be published soon!
