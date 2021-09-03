@@ -1,0 +1,26 @@
+{
+  "data": {
+    "authors": [
+      {
+        "id": 1,
+        "author_name": "sam"
+      },
+      {
+        "id": 2,
+        "author_name": "bam"
+      },
+      {
+        "id": 3,
+        "author_name": "can"
+      },
+      {
+        "id": 4,
+        "author_name": "of"
+      },
+      {
+        "id": 5,
+        "author_name": "ham"
+      }
+    ]
+  }
+}

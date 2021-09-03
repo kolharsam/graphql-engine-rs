@@ -1,0 +1,6 @@
+query GetAuthors {
+  authors {
+    name: author_name
+    author_id: id
+    }
+}

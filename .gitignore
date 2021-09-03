@@ -13,3 +13,9 @@ Cargo.lock
 # Added by cargo
 
 /target
+
+# misc. files & folders
+
+.metals
+.vscode
+.env

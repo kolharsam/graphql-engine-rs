@@ -1,0 +1,6 @@
+query GetAuthors {
+  authors(distinct_on: author_name, limit: 3, offset: 1) {
+    name: author_name
+    author_id: id
+  }
+}

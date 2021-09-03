@@ -36,9 +36,15 @@ pub struct ErrorResponse {
 }
 
 // NOTE: this should be used for sending the API response
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct DataResponse {
     data: IndexMap<String, serde_json::Value>,
+}
+
+impl DataResponse {
+    pub fn new(data: IndexMap<String, serde_json::Value>) -> DataResponse {
+        DataResponse { data }
+    }
 }
 
 pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::HttpResponse {
@@ -70,15 +76,15 @@ pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::Http
     // })
 }
 
-fn empty_query_variables() -> IndexMap<String, String> {
+pub fn empty_query_variables() -> IndexMap<String, String> {
     IndexMap::new()
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GraphQLRequest {
-    query: String,
+    pub query: String,
     #[serde(default = "empty_query_variables")]
-    variables: IndexMap<String, String>,
+    pub variables: IndexMap<String, String>,
 }
 
 type GQLResult = IndexMap<String, serde_json::Value>;
@@ -114,7 +120,10 @@ fn fetch_result_from_query_fields<'a>(
                                 field_args.insert(fa.0, fa.1);
                             } else {
                                 return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                    error: format!("The value should be one of: {:?}", str_fields),
+                                    error: format!(
+                                        "The value for `distinct_on` should be one of: {:?}",
+                                        str_fields
+                                    ),
                                 });
                             }
                         } else if let Err(e) = convert_to_string_arg {
@@ -179,7 +188,7 @@ fn fetch_result_from_query_fields<'a>(
         }
     }
 
-    actix_web::HttpResponse::Ok().json(DataResponse { data: final_res })
+    actix_web::HttpResponse::Ok().json(DataResponse::new(final_res))
 }
 
 fn selection_set_fields_parser<'a>(
@@ -201,66 +210,51 @@ fn selection_set_fields_parser<'a>(
 //       Mutations, Subscriptions will be supported eventually.
 pub async fn graphql_handler(
     srv_ctx: actix_web::web::Data<&'static str>,
-    payload: actix_web::web::Bytes,
+    payload: actix_web::web::Json<GraphQLRequest>,
 ) -> actix_web::HttpResponse {
     let conn_str = srv_ctx.get_ref();
     let mut pg_client = db::get_pg_client(conn_str.to_string());
 
-    let payload_to_str = std::str::from_utf8(&payload);
-
-    let parse_result = match payload_to_str {
-        Ok(s) => json::parse(s),
-        Err(_err) => Err(json::Error::FailedUtf8Parsing),
-    };
-
-    let body = parse_result.unwrap_or_else(|e| json::object! { "error" => e.to_string() });
-
-    match serde_json::from_str::<'_, GraphQLRequest>(&body.dump()) {
-        Ok(b) => match graphql_parser::parse_query::<&str>(&b.query) {
-            // NOTE: We only execute the first query/mutation/subscription that
-            // gets matched/parsed. Similar to what Hasura does
-            Ok(q) => match &q.definitions[0] {
-                graphql_parser::query::Definition::Fragment(_) => actix_web::HttpResponse::Ok()
-                    .json(ErrorResponse {
+    match graphql_parser::parse_query::<&str>(&payload.query) {
+        // NOTE: We only execute the first query/mutation/subscription that
+        // gets matched/parsed. Similar to what Hasura does
+        Ok(q) => match &q.definitions[0] {
+            graphql_parser::query::Definition::Fragment(_) => {
+                actix_web::HttpResponse::Ok().json(ErrorResponse {
+                    error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
+                        "Fragments are not yet supported!".to_string(),
+                    ))
+                    .to_string(),
+                })
+            }
+            graphql_parser::query::Definition::Operation(op) => match op {
+                graphql_parser::query::OperationDefinition::Mutation(_) => {
+                    actix_web::HttpResponse::Ok().json(ErrorResponse {
                         error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                            "Fragments are not yet supported!".to_string(),
+                            "Mutations are not yet supported!".to_string(),
                         ))
                         .to_string(),
-                    }),
-                graphql_parser::query::Definition::Operation(op) => match op {
-                    graphql_parser::query::OperationDefinition::Mutation(_) => {
-                        actix_web::HttpResponse::Ok().json(ErrorResponse {
-                            error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                                "Mutations are not yet supported!".to_string(),
-                            ))
-                            .to_string(),
-                        })
-                    }
-                    graphql_parser::query::OperationDefinition::Subscription(_) => {
-                        actix_web::HttpResponse::Ok().json(ErrorResponse {
-                            error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                                "Subscriptions are not yet supported!".to_string(),
-                            ))
-                            .to_string(),
-                        })
-                    }
-                    graphql_parser::query::OperationDefinition::Query(qry) => {
-                        fetch_result_from_query_fields(&qry.selection_set, &mut pg_client)
-                    }
-                    graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                        fetch_result_from_query_fields(sel_set, &mut pg_client)
-                    }
-                },
+                    })
+                }
+                graphql_parser::query::OperationDefinition::Subscription(_) => {
+                    actix_web::HttpResponse::Ok().json(ErrorResponse {
+                        error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
+                            "Subscriptions are not yet supported!".to_string(),
+                        ))
+                        .to_string(),
+                    })
+                }
+                graphql_parser::query::OperationDefinition::Query(qry) => {
+                    fetch_result_from_query_fields(&qry.selection_set, &mut pg_client)
+                }
+                graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
+                    fetch_result_from_query_fields(sel_set, &mut pg_client)
+                }
             },
-            Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
-                // NOTE: this is the error when no valid AST was generated
-                // by the parser or any other parser failures
-                error: e.to_string(),
-            }),
         },
         Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
-            // NOTE: this is the error when the parsed JSON is
-            // not of the type of GraphQLRequest
+            // NOTE: this is the error when no valid AST was generated
+            // by the parser or any other parser failures
             error: e.to_string(),
         }),
     }
