@@ -41,6 +41,6 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/postgres
 
     - name: Run tests
-      run: cargo test --verbose
+      run: make test
       env:
         DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/postgres
