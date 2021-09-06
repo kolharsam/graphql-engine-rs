@@ -120,7 +120,7 @@ fn fetch_result_from_query_fields<'a>(
                         if let Ok(fa) = convert_to_string_arg {
                             let str_fields = field_names_to_name_list(&sub_fields);
                             // NOTE: this is very specific to the case of `distinct_on`
-                            // we might not need to check that each arg that takes 
+                            // we might not need to check that each arg that takes
                             // values of type `String` should be bounded by the column names
                             if str_fields.contains(&fa.1.get_string()) {
                                 field_args.insert(fa.0, fa.1);
