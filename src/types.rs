@@ -1,3 +1,4 @@
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error;
@@ -167,7 +168,8 @@ pub enum GQLArgType {
     String(String),
     // NOTE: supported for [limit, offset]
     Int(i64),
-    // Float(f32)
+    // NOTE: supported for [order_by]
+    Object(IndexMap<String, String>),
 }
 
 type FieldArguments = indexmap::IndexMap<String, GQLArgType>;
@@ -195,6 +197,14 @@ impl GQLArgType {
         // FIXME?: This should/would never happen
         // unless we use it incorrectly
         "".to_string()
+    }
+
+    pub fn get_object(&self) -> IndexMap<String, String> {
+        if let GQLArgType::Object(obj) = &self {
+            return obj.clone();
+        }
+
+        IndexMap::new()
     }
 }
 
@@ -231,8 +241,7 @@ pub fn to_int_arg<'a>(
     arg_val: &graphql_parser::query::Value<'a, &'a str>,
 ) -> Result<(String, GQLArgType), error::GQLRSError> {
     if let graphql_parser::query::Value::Int(num) = arg_val {
-        let inum = num.as_i64();
-        match inum {
+        match num.as_i64() {
             Some(n) => return Ok((arg_name, GQLArgType::Int(n))),
             None => {
                 return Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
@@ -243,11 +252,68 @@ pub fn to_int_arg<'a>(
     }
 
     Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-        "failed to parse int".to_string(),
+        format!("failed to parse argument {}", arg_name),
     )))
 }
 
-// NOTE: these arguments are case sensitive, in case they're not
-// these exactly we have every right to reject the query!
+// TODO: refactor the args processing part to have a function for each of
+// the different args that are being supported currently
+/**
+ *
+ * match arg_name {
+ *  "limit" => { // do something... },
+ *  "order_by" => { .... },
+ *  .....
+ * }
+ */
+
+pub fn to_object_arg<'a>(
+    arg_name: String,
+    arg_val: &graphql_parser::query::Value<'a, &'a str>,
+    supported_keys: Vec<String>,
+) -> Result<(String, GQLArgType), error::GQLRSError> {
+    if let graphql_parser::query::Value::Object(arg_bmap) = arg_val {
+        if arg_bmap.is_empty() {
+            return Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
+                format!("{} cannot be empty", arg_name),
+            )));
+        }
+
+        let mut arg_map: IndexMap<String, String> = IndexMap::new();
+
+        for (key_name, value) in arg_bmap.iter() {
+            if let graphql_parser::query::Value::Enum(val) = value {
+                if supported_keys.contains(&<&str>::clone(key_name).to_string()) {
+                    arg_map.insert(key_name.to_string(), val.to_string());
+                } else {
+                    return Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
+                        format!("{} is not a valid column of the table; Cannot be used as part of the query", key_name)
+                    )));
+                }
+            }
+            // NOTE: we're currently ignoring `Value`s of other types
+            // since we only support `order_by` now, which only requires
+            // other strings as values.
+        }
+
+        return Ok((arg_name, GQLArgType::Object(arg_map)));
+    }
+
+    Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
+        format!("failed to parse argument {}", arg_name),
+    )))
+}
+
+// NOTE: these argument names are case sensitive, in case they're
+// not these exactly we have every right to reject the query!
 pub const SUPPORTED_STRING_GQL_ARGUMENTS: [&str; 1] = ["distinct_on"];
 pub const SUPPORTED_INT_GQL_ARGUMENTS: [&str; 2] = ["offset", "limit"];
+pub const SUPPORTED_OBJECT_GQL_ARGUMENTS: [&str; 1] = ["order_by"];
+pub const ORDER_BY_CLAUSES: [&str; 6] = [
+    "asc",
+    "asc_nulls_first",
+    "asc_nulls_last",
+    "desc",
+    "desc_nulls_first",
+    "desc_nulls_last",
+];
