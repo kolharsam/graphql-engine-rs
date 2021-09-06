@@ -1,8 +1,8 @@
+use postgres::{Client, NoTls, Row};
+
 use crate::error;
 use crate::types;
-use crate::types::GQLArgType;
-use indexmap::IndexMap;
-use postgres::{Client, NoTls, Row};
+use crate::types::{GQLArgType, ORDER_BY_CLAUSES};
 
 pub fn get_pg_client(connection_string: String) -> Client {
     let client = Client::connect(&connection_string, NoTls);
@@ -18,17 +18,11 @@ pub fn get_pg_client(connection_string: String) -> Client {
 }
 
 #[inline]
-fn add_int_arg_to_query(
-    query_str: &mut String,
-    arg_name: &str,
-    arg_map: &IndexMap<String, GQLArgType>,
-) {
-    let uppercased_arg_name = arg_name.to_uppercase();
-    let arg_value = arg_map.get(arg_name);
+fn add_int_arg_to_query(query_str: &mut String, arg_name: &str, arg_value: Option<&GQLArgType>) {
     match arg_value {
         None => (),
         Some(val) => {
-            query_str.push_str(format!("{} {} ", uppercased_arg_name, val.get_num()).as_str());
+            query_str.push_str(format!("{} {} ", arg_name.to_uppercase(), val.get_num()).as_str());
         }
     }
 }
@@ -80,15 +74,36 @@ pub fn get_rows_gql_query(
 
     if query_has_args {
         for field_arg in types::SUPPORTED_INT_GQL_ARGUMENTS.iter() {
+            let arg_val = field_info.root_field_arguments.get(*field_arg);
             match *field_arg {
                 "limit" => {
-                    add_int_arg_to_query(&mut query, "limit", &field_info.root_field_arguments);
+                    add_int_arg_to_query(&mut query, "limit", arg_val);
                 }
                 "offset" => {
-                    add_int_arg_to_query(&mut query, "offset", &field_info.root_field_arguments);
+                    add_int_arg_to_query(&mut query, "offset", arg_val);
                 }
                 _ => (),
             }
+        }
+    }
+
+    // See if there's a requirement of the `order by` clause
+    if query_has_args && field_info.root_field_arguments.contains_key("order_by") {
+        let order_by_cols = field_info.root_field_arguments.get("order_by");
+        match order_by_cols {
+            Some(val) => {
+                query.push_str(" ORDER BY ");
+                let order_by_map = val.get_object();
+
+                for (col_name, col_order) in order_by_map.iter() {
+                    if !ORDER_BY_CLAUSES.contains(&col_order.as_str()) {
+                        // TODO: add the right SQL statements
+                    }
+                }
+            }
+            // NOTE: this is again not plausible
+            // TODO: but this should be reported as error if it does occur
+            None => {}
         }
     }
 
