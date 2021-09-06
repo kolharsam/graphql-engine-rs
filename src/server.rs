@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::db;
 use crate::error;
 use crate::types::{
-    field_names_to_name_list, to_int_arg, to_string_arg, FieldInfo, FieldName, GQLArgType,
-    QualifiedTable, SUPPORTED_INT_GQL_ARGUMENTS, SUPPORTED_STRING_GQL_ARGUMENTS,
+    field_names_to_name_list, to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName,
+    GQLArgType, QualifiedTable, SUPPORTED_INT_GQL_ARGUMENTS, SUPPORTED_OBJECT_GQL_ARGUMENTS,
+    SUPPORTED_STRING_GQL_ARGUMENTS,
 };
 
 pub async fn healthz_handler(_req: actix_web::HttpRequest) -> String {
@@ -98,6 +99,8 @@ fn fetch_result_from_query_fields<'a>(
 ) -> actix_web::HttpResponse {
     let mut fields_map: IndexMap<FieldName, FieldInfo> = IndexMap::new();
 
+    println!("{:?}", qry_sel_set); // TODO: remove this line
+
     for set in qry_sel_set.items.iter() {
         // NOTE: Nothing's being done for the other variants of the Selection enum
         if let graphql_parser::query::Selection::Field(field) = set {
@@ -116,6 +119,9 @@ fn fetch_result_from_query_fields<'a>(
                         let convert_to_string_arg = to_string_arg(arg_name, arg_value);
                         if let Ok(fa) = convert_to_string_arg {
                             let str_fields = field_names_to_name_list(&sub_fields);
+                            // NOTE: this is very specific to the case of `distinct_on`
+                            // we might not need to check that each arg that takes 
+                            // values of type `String` should be bounded by the column names
                             if str_fields.contains(&fa.1.get_string()) {
                                 field_args.insert(fa.0, fa.1);
                             } else {
@@ -136,6 +142,16 @@ fn fetch_result_from_query_fields<'a>(
                         if let Ok(fa) = convert_to_int_arg {
                             field_args.insert(fa.0, fa.1);
                         } else if let Err(e) = convert_to_int_arg {
+                            return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                error: e.to_string(),
+                            });
+                        }
+                    } else if SUPPORTED_OBJECT_GQL_ARGUMENTS.contains(&arg_name.as_str()) {
+                        let str_fields = field_names_to_name_list(&sub_fields);
+                        let convert_to_object_arg = to_object_arg(arg_name, arg_value, str_fields);
+                        if let Ok(fa) = convert_to_object_arg {
+                            field_args.insert(fa.0, fa.1);
+                        } else if let Err(e) = convert_to_object_arg {
                             return actix_web::HttpResponse::Ok().json(ErrorResponse {
                                 error: e.to_string(),
                             });
