@@ -7,7 +7,7 @@ use crate::types::{GQLArgType, ORDER_BY_CLAUSES};
 pub fn get_pg_client(connection_string: String) -> Client {
     let client = Client::connect(&connection_string, NoTls);
     match client {
-        Ok(c) => c,
+        Ok(pg_client) => pg_client,
         // NOTE: Panic-ing since this is a crisis, the DB is out,
         // should move to a more safe handling of this sooner than later
         Err(e) => panic!(
@@ -95,15 +95,31 @@ pub fn get_rows_gql_query(
                 query.push_str(" ORDER BY ");
                 let order_by_map = val.get_object();
 
-                for (col_name, col_order) in order_by_map.iter() {
-                    if !ORDER_BY_CLAUSES.contains(&col_order.as_str()) {
+                for (col_name, order_clause) in order_by_map.iter() {
+                    if ORDER_BY_CLAUSES.contains(&order_clause.as_str()) {
                         // TODO: add the right SQL statements
+                        match &order_clause.as_str() {
+                            "asc" => {}
+                            "asc_nulls_first" => {}
+                            "asc_nulls_last" => {}
+                            "desc" => {}
+                            "desc_nulls_first" => {}
+                            "desc_nulls_last" => {} 
+                        }
+                    } else {
+                        return Err(error::GQLRSError::new(error::GQLRSErrorType::InvalidInput(
+                            format!("Values for `order_by` should be one of {:?}", ORDER_BY_CLAUSES)
+                        )));
                     }
                 }
             }
             // NOTE: this is again not plausible
             // TODO: but this should be reported as error if it does occur
-            None => {}
+            None => {
+                return Err(error::GQLRSError::new(error::GQLRSErrorType::InvalidInput(
+                    "argument value not found".to_string()
+                )));
+            }
         }
     }
 
