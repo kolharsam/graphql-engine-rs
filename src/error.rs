@@ -8,10 +8,10 @@ pub enum GQLRSErrorType {
     TableAlreadyTracked(String),
     #[error("ERROR: Table {0} not found in metadata")]
     TableNotFoundInMetadata(String),
-    #[error("Error: failed to connect with database at {0}")]
+    #[error("ERROR: failed to connect with database at {0}")]
     DBError(String),
-    #[error("ERROR: Invalid input was supplied.")]
-    InvalidInput,
+    #[error("ERROR: Invalid input supplied. `{0}`")]
+    InvalidInput(String),
 }
 
 #[derive(Error, Debug, serde::Serialize)]
