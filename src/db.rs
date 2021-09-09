@@ -3,6 +3,7 @@ use postgres::{Client, NoTls, Row};
 use crate::error;
 use crate::types;
 use crate::types::{GQLArgType, ORDER_BY_CLAUSES};
+use crate::utils;
 
 pub fn get_pg_client(connection_string: String) -> Client {
     let client = Client::connect(&connection_string, NoTls);
@@ -95,29 +96,52 @@ pub fn get_rows_gql_query(
                 query.push_str(" ORDER BY ");
                 let order_by_map = val.get_object();
 
-                for (col_name, order_clause) in order_by_map.iter() {
-                    if ORDER_BY_CLAUSES.contains(&order_clause.as_str()) {
-                        // TODO: add the right SQL statements
-                        match &order_clause.as_str() {
-                            "asc" => {}
-                            "asc_nulls_first" => {}
-                            "asc_nulls_last" => {}
-                            "desc" => {}
-                            "desc_nulls_first" => {}
-                            "desc_nulls_last" => {} 
+                for (col_name, order_clause_str) in order_by_map.iter() {
+                    let order_clause = order_clause_str.as_str();
+                    let quoted_col_name = utils::dquote(col_name);
+                    match order_clause {
+                        "asc" => {
+                            query.push_str(format!("{} ASC,", quoted_col_name).as_str());
                         }
-                    } else {
-                        return Err(error::GQLRSError::new(error::GQLRSErrorType::InvalidInput(
-                            format!("Values for `order_by` should be one of {:?}", ORDER_BY_CLAUSES)
-                        )));
+                        "asc_nulls_first" => {
+                            query
+                                .push_str(format!("{} ASC NULLS FIRST,", quoted_col_name).as_str());
+                        }
+                        "asc_nulls_last" => {
+                            query.push_str(format!("{} ASC NULLS LAST,", quoted_col_name).as_str());
+                        }
+                        "desc" => {
+                            query.push_str(format!("{} DESC,", quoted_col_name).as_str());
+                        }
+                        "desc_nulls_first" => {
+                            query.push_str(
+                                format!("{} DESC NULLS FIRST,", quoted_col_name).as_str(),
+                            );
+                        }
+                        "desc_nulls_last" => {
+                            query
+                                .push_str(format!("{} DESC NULLS LAST,", quoted_col_name).as_str());
+                        }
+                        _ => {
+                            return Err(error::GQLRSError::new(
+                                error::GQLRSErrorType::InvalidInput(format!(
+                                    "Value for \"order_by\" should be one of: {:?}",
+                                    ORDER_BY_CLAUSES
+                                )),
+                            ));
+                        }
                     }
                 }
+
+                // NOTE: Popping the last character here for the hanging comma that
+                // might be present upon adding these statements to the query string
+                query.pop();
             }
             // NOTE: this is again not plausible
             // TODO: but this should be reported as error if it does occur
             None => {
                 return Err(error::GQLRSError::new(error::GQLRSErrorType::InvalidInput(
-                    "argument value not found".to_string()
+                    "argument value not found".to_string(),
                 )));
             }
         }
