@@ -134,6 +134,8 @@ mod tests {
             "basic_query_test_key_order",
             "basic_query_with_limit_offset_distinct_on",
             "query_with_aliases",
+            "query_order_by_asc",
+            "query_order_by_desc",
         ];
 
         // NOTE: Try and make this parallelised
