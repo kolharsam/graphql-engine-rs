@@ -99,8 +99,6 @@ fn fetch_result_from_query_fields<'a>(
 ) -> actix_web::HttpResponse {
     let mut fields_map: IndexMap<FieldName, FieldInfo> = IndexMap::new();
 
-    println!("{:?}", qry_sel_set); // TODO: remove this line
-
     for set in qry_sel_set.items.iter() {
         // NOTE: Nothing's being done for the other variants of the Selection enum
         if let graphql_parser::query::Selection::Field(field) = set {
