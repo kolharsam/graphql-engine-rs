@@ -103,9 +103,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
                             self.server_addr.do_send(Disconnect {
                                 id: self.id.clone(),
                             });
-                            ctx.close(Some(
-                                SimpleGQLCloseCode::ConnectionInitialisationTimeout.into(),
-                            ));
+                            ctx.close(SimpleGQLCloseCode::ConnectionInitialisationTimeout.into());
                             ctx.stop();
                         } else {
                             self.server_addr

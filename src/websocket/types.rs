@@ -224,3 +224,15 @@ impl From<GQLCloseCode> for CloseReason {
         }
     }
 }
+
+impl From<SimpleGQLCloseCode> for Option<CloseReason> {
+    fn from(code: SimpleGQLCloseCode) -> Self {
+        Some(code.into())
+    }
+}
+
+impl From<GQLCloseCode> for Option<CloseReason> {
+    fn from(code: GQLCloseCode) -> Self {
+        Some(code.into())
+    }
+}
