@@ -1,10 +1,13 @@
 use actix::{Message as ActixMessage, Recipient};
+use actix_web_actors::ws::WebsocketContext;
 use indexmap::IndexMap;
 use json::iterators::Members;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, str::FromStr};
 
 use crate::error::GQLRSError;
+
+use super::WebSocketSession;
 
 pub const GRAPHQL_TRANSPORT_WS_PROTOCOL: &str = "graphql-transport-ws";
 
@@ -16,7 +19,7 @@ pub trait ToMessage {
     fn to_message(&self) -> Result<Message, serde_json::Error>;
 }
 
-#[derive(ActixMessage, Debug)]
+#[derive(ActixMessage)]
 #[rtype(result = "()")]
 // TODO: find a better name for this struct
 pub struct ClientPayload {
@@ -51,12 +54,12 @@ pub enum ClientMessage {
     Pong {
         payload: Option<HashMap<String, String>>,
     },
-    Invalid,
+    Invalid(String),
 }
 
 impl From<Message> for ClientMessage {
     fn from(message: Message) -> Self {
-        ClientMessage::from_str(&message.0).unwrap_or(ClientMessage::Invalid)
+        ClientMessage::from_str(&message.0).unwrap_or(ClientMessage::Invalid(message.0))
     }
 }
 

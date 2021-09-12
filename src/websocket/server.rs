@@ -2,7 +2,7 @@ use super::types::{ClientMessage, ClientPayload, Connect, Disconnect, Message, S
 use actix::{Actor, Context, Handler, Recipient};
 use log::error;
 use serde_json::error::Result as SerdeResult;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 pub struct WebSocketServer {
     sessions: HashMap<String, Recipient<Message>>,
@@ -61,8 +61,11 @@ impl WebSocketServer {
 impl Handler<Connect> for WebSocketServer {
     type Result = ();
 
-    fn handle(&mut self, msg: Connect, _: &mut Context<Self>) {
+    fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) {
         self.sessions.insert(msg.id.clone(), msg.addr);
+        // if self.timings.contains_key(&msg.id) {
+        //     ctx.close()
+        // }
         println!("sessions: \n{:?}", self.sessions);
     }
 }
@@ -94,11 +97,11 @@ impl Handler<ClientPayload> for WebSocketServer {
             }
             ClientMessage::Complete { id } => println!("Message from client: {:?}", id),
             ClientMessage::Subscribe { payload: _, id: _ } => {
-                println!("Message from client: {:?}", client_payload)
+                println!("Message from client: {:?}", &client_payload.message)
             }
             ClientMessage::Ping { payload: _ } => self.handle_ping(client_payload),
             ClientMessage::Pong { payload: _ } => self.handle_pong(client_payload),
-            ClientMessage::Invalid => println!("Message from client: {:?}", client_payload),
+            ClientMessage::Invalid(text) => error!("Message from client: {:?}", text),
         }
     }
 }

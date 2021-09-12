@@ -7,7 +7,7 @@ use std::{
 };
 
 use actix_web::{error::Error, web, HttpRequest, HttpResponse};
-use actix_web_actors::ws;
+use actix_web_actors::ws::{self, CloseCode, CloseReason};
 use log::error;
 use uuid::Uuid;
 
@@ -19,8 +19,10 @@ use actix::{
 pub use self::server::*;
 use self::types::{ClientMessage, ClientPayload, Connect, Disconnect, Message};
 
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(30);
+// For waiting for connectionInit message
+const CONNECTION_INIT_WAIT_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub struct WebSocketSession {
     id: String,
@@ -41,12 +43,8 @@ impl WebSocketSession {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
                 error!("Websocket Client heartbeat failed, disconnecting!");
-                act.server_addr
-                    .do_send(types::Disconnect { id: act.id.clone() });
-                // stop actor
+                act.server_addr.do_send(Disconnect { id: act.id.clone() });
                 ctx.stop();
-
-                // don't try to send a ping
                 return;
             }
             ctx.ping(b"");
@@ -97,9 +95,28 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
                 self.hb = Instant::now();
             }
             Ok(ws::Message::Text(text)) => {
-                let message = ClientMessage::from_str(&text).unwrap_or(ClientMessage::Invalid);
-                self.server_addr
-                    .do_send(ClientPayload::new(self.id.clone(), message));
+                let message =
+                    ClientMessage::from_str(&text).unwrap_or(ClientMessage::Invalid(text));
+                match &message {
+                    ClientMessage::ConnectionInit { payload: _ } => {
+                        if Instant::now().duration_since(self.hb) > CONNECTION_INIT_WAIT_TIMEOUT {
+                            self.server_addr.do_send(Disconnect {
+                                id: self.id.clone(),
+                            });
+                            ctx.close(Some(CloseReason {
+                                code: CloseCode::Other(4408),
+                                description: Some("Connection initialisation timeout".to_string()),
+                            }));
+                            ctx.stop();
+                        } else {
+                            self.server_addr
+                                .do_send(ClientPayload::new(self.id.clone(), message))
+                        }
+                    }
+                    _ => self
+                        .server_addr
+                        .do_send(ClientPayload::new(self.id.clone(), message)),
+                }
             }
             Ok(ws::Message::Binary(bin)) => ctx.binary(bin),
             Ok(ws::Message::Close(reason)) => {
