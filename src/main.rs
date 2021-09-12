@@ -1,3 +1,4 @@
+use actix::Actor;
 use actix_web::http;
 use log::{debug, info, trace, warn};
 
@@ -6,10 +7,11 @@ mod db;
 mod error;
 mod logger;
 mod options;
+mod routes;
 mod server;
 mod types;
 mod utils;
-mod ws;
+mod websocket;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -20,6 +22,7 @@ async fn main() -> std::io::Result<()> {
 
     debug!("GraphQL-Engine-RS is being initialised...");
 
+    let server = websocket::WebSocketServer::new().start();
     let serve_options = options::parsed_options();
     if serve_options.source_name == "default" {
         warn!("No source-name was provided, setting \"default\" as source-name.");
@@ -34,6 +37,7 @@ async fn main() -> std::io::Result<()> {
         actix_web::App::new()
             // TODO: eventually, this would be the server ctx
             .data(<&str>::clone(&connection_string))
+            .data(server.clone())
             .wrap(actix_web::middleware::Logger::default())
             .wrap(
                 actix_cors::Cors::default()
@@ -43,19 +47,7 @@ async fn main() -> std::io::Result<()> {
                     .allowed_header(http::header::CONTENT_TYPE)
                     .max_age(3600),
             )
-            .service(
-                actix_web::web::resource("/healthz")
-                    .route(actix_web::web::get().to(server::healthz_handler)),
-            )
-            // TODO: make the version "v1" as one `resource` and then add these routes there
-            .service(
-                actix_web::web::resource("/v1/metadata")
-                    .route(actix_web::web::post().to(server::metadata_handler)),
-            )
-            .service(
-                actix_web::web::resource("/v1/graphql")
-                    .route(actix_web::web::post().to(server::graphql_handler)),
-            )
+            .configure(routes::routes)
             .default_service(
                 // 404 for GET request
                 actix_web::web::resource("")
