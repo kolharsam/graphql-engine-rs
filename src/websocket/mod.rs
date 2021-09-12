@@ -7,7 +7,7 @@ use std::{
 };
 
 use actix_web::{error::Error, web, HttpRequest, HttpResponse};
-use actix_web_actors::ws::{self, CloseCode, CloseReason};
+use actix_web_actors::ws;
 use log::error;
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ use actix::{
 };
 
 pub use self::server::*;
-use self::types::{ClientMessage, ClientPayload, Connect, Disconnect, Message};
+use self::types::{ClientMessage, ClientPayload, Connect, Disconnect, Message, SimpleGQLCloseCode};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -103,10 +103,9 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
                             self.server_addr.do_send(Disconnect {
                                 id: self.id.clone(),
                             });
-                            ctx.close(Some(CloseReason {
-                                code: CloseCode::Other(4408),
-                                description: Some("Connection initialisation timeout".to_string()),
-                            }));
+                            ctx.close(Some(
+                                SimpleGQLCloseCode::ConnectionInitialisationTimeout.into(),
+                            ));
                             ctx.stop();
                         } else {
                             self.server_addr
