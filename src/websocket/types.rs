@@ -1,16 +1,10 @@
 use actix::{Message as ActixMessage, Recipient};
-use actix_web_actors::ws::{CloseCode, CloseReason, WebsocketContext};
+use actix_web_actors::ws::{CloseCode, CloseReason};
 use indexmap::IndexMap;
-use json::iterators::Members;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    str::{EncodeUtf16, FromStr},
-};
+use std::{collections::HashMap, str::FromStr};
 
 use crate::error::GQLRSError;
-
-use super::WebSocketSession;
 
 pub const GRAPHQL_TRANSPORT_WS_PROTOCOL: &str = "graphql-transport-ws";
 
@@ -73,7 +67,7 @@ impl FromStr for ClientMessage {
     }
 }
 
-#[derive(ActixMessage, Serialize, Clone)]
+#[derive(ActixMessage, Serialize)]
 #[rtype(result = "()")]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -120,7 +114,7 @@ pub struct MessagePayload {
     variables: Option<HashMap<String, String>>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize)]
 pub enum ExecutionResult {
     Data(IndexMap<String, serde_json::Value>),
     Errors(Vec<GQLRSError>),
@@ -139,100 +133,69 @@ pub struct Disconnect {
     pub id: String,
 }
 
-#[derive(Clone)]
-#[repr(u16)]
-pub enum SimpleGQLCloseCode {
-    InternalServerError = 4500,
-    BadRequest = 4400,
-    /** Tried subscribing before connect ack */
-    Unauthorized = 4401,
-    Forbidden = 4403,
-    SubprotocolNotAcceptable = 4406,
-    ConnectionInitialisationTimeout = 4408,
-    ConnectionAcknowledgementTimeout = 4504,
-    TooManyInitialisationRequests = 4429,
-}
-
-#[derive(Clone)]
 pub enum GQLCloseCode {
-    Simple(SimpleGQLCloseCode),
+    InternalServerError,
+    BadRequest,
+    /** Tried subscribing before connect ack */
+    Unauthorized,
+    Forbidden,
+    SubprotocolNotAcceptable,
+    ConnectionInitialisationTimeout,
+    ConnectionAcknowledgementTimeout,
+    TooManyInitialisationRequests,
     SubscriberAlreadyExists(String),
 }
 
-impl From<SimpleGQLCloseCode> for CloseCode {
-    fn from(code: SimpleGQLCloseCode) -> Self {
-        Self::Other(code as u16)
+impl GQLCloseCode {
+    fn to_close_reason(&self, description: &str) -> CloseReason {
+        CloseReason {
+            code: self.into(),
+            description: Some(description.to_string()),
+        }
     }
 }
-
-impl From<GQLCloseCode> for CloseCode {
-    fn from(code: GQLCloseCode) -> Self {
+impl From<&GQLCloseCode> for CloseCode {
+    fn from(code: &GQLCloseCode) -> Self {
         match code {
-            GQLCloseCode::Simple(custom_code) => custom_code.into(),
-            GQLCloseCode::SubscriberAlreadyExists(_) => Self::Other(4409),
+            GQLCloseCode::InternalServerError => CloseCode::Other(4500),
+            GQLCloseCode::BadRequest => CloseCode::Other(4400),
+            GQLCloseCode::Unauthorized => CloseCode::Other(4401),
+            GQLCloseCode::Forbidden => CloseCode::Other(4403),
+            GQLCloseCode::SubprotocolNotAcceptable => CloseCode::Other(4406),
+            GQLCloseCode::ConnectionInitialisationTimeout => CloseCode::Other(4408),
+            GQLCloseCode::ConnectionAcknowledgementTimeout => CloseCode::Other(4504),
+            GQLCloseCode::TooManyInitialisationRequests => CloseCode::Other(4429),
+            GQLCloseCode::SubscriberAlreadyExists(_) => CloseCode::Other(4409),
         }
     }
 }
-impl From<SimpleGQLCloseCode> for CloseReason {
-    fn from(code: SimpleGQLCloseCode) -> Self {
-        match &code {
-            SimpleGQLCloseCode::InternalServerError => CloseReason {
-                code: code.into(),
-                description: Some("Internal server error".to_string()),
-            },
-            SimpleGQLCloseCode::BadRequest => CloseReason {
-                code: code.into(),
-                description: Some("Bad request".to_string()),
-            },
-            SimpleGQLCloseCode::Unauthorized => CloseReason {
-                code: code.into(),
-                description: Some("Unauthorized".to_string()),
-            },
-            SimpleGQLCloseCode::Forbidden => CloseReason {
-                code: code.into(),
-                description: Some("Forbidden".to_string()),
-            },
-            SimpleGQLCloseCode::SubprotocolNotAcceptable => CloseReason {
-                code: code.into(),
-                description: Some("Subprotocol not acceptable".to_string()),
-            },
-            SimpleGQLCloseCode::ConnectionInitialisationTimeout => CloseReason {
-                code: code.into(),
-                description: Some("Connection initialisation timeout".to_string()),
-            },
-            // TODO: consider removing this
-            SimpleGQLCloseCode::ConnectionAcknowledgementTimeout => CloseReason {
-                code: code.into(),
-                description: Some("Connection acknowledgement timeout".to_string()),
-            },
-            SimpleGQLCloseCode::TooManyInitialisationRequests => CloseReason {
-                code: code.into(),
-                description: Some("Too many initialisation requests".to_string()),
-            },
+impl From<&GQLCloseCode> for CloseReason {
+    fn from(gql_code: &GQLCloseCode) -> Self {
+        match gql_code {
+            GQLCloseCode::InternalServerError => gql_code.to_close_reason("Internal server error"),
+            GQLCloseCode::BadRequest => gql_code.to_close_reason("Bad request"),
+            GQLCloseCode::Unauthorized => gql_code.to_close_reason("Unathorized"),
+            GQLCloseCode::Forbidden => gql_code.to_close_reason("Forbidden"),
+            GQLCloseCode::SubprotocolNotAcceptable => {
+                gql_code.to_close_reason("Subprotocol not acceptable")
+            }
+            GQLCloseCode::ConnectionInitialisationTimeout => {
+                gql_code.to_close_reason("Connection initialisation timeout")
+            }
+            GQLCloseCode::ConnectionAcknowledgementTimeout => {
+                gql_code.to_close_reason("Connection acknowledgement timeout")
+            }
+            GQLCloseCode::TooManyInitialisationRequests => {
+                gql_code.to_close_reason("Too many initialisation requests")
+            }
+            GQLCloseCode::SubscriberAlreadyExists(ref id) => {
+                gql_code.to_close_reason(&format!("Subscriber for {} already exists", id))
+            }
         }
     }
 }
-
-impl From<GQLCloseCode> for CloseReason {
-    fn from(gql_code: GQLCloseCode) -> Self {
-        match &gql_code {
-            GQLCloseCode::Simple(code) => code.clone().into(),
-            GQLCloseCode::SubscriberAlreadyExists(id) => CloseReason {
-                code: gql_code.clone().into(),
-                description: Some(format!("Subscriber for {} already exists", id)),
-            },
-        }
-    }
-}
-
-impl From<SimpleGQLCloseCode> for Option<CloseReason> {
-    fn from(code: SimpleGQLCloseCode) -> Self {
-        Some(code.into())
-    }
-}
-
 impl From<GQLCloseCode> for Option<CloseReason> {
     fn from(code: GQLCloseCode) -> Self {
-        Some(code.into())
+        Some((&code).into())
     }
 }

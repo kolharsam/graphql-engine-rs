@@ -17,7 +17,7 @@ use actix::{
 };
 
 pub use self::server::*;
-use self::types::{ClientMessage, ClientPayload, Connect, Disconnect, Message, SimpleGQLCloseCode};
+use self::types::{ClientMessage, ClientPayload, Connect, Disconnect, GQLCloseCode, Message};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -103,7 +103,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WebSocketSession 
                             self.server_addr.do_send(Disconnect {
                                 id: self.id.clone(),
                             });
-                            ctx.close(SimpleGQLCloseCode::ConnectionInitialisationTimeout.into());
+                            ctx.close(GQLCloseCode::ConnectionInitialisationTimeout.into());
                             ctx.stop();
                         } else {
                             self.server_addr
