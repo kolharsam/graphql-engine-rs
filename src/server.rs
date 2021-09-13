@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use log::warn;
 use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
@@ -6,8 +7,9 @@ use serde::{Deserialize, Serialize};
 use crate::db;
 use crate::error;
 use crate::types::{
-    field_names_to_name_list, to_int_arg, to_string_arg, FieldInfo, FieldName, GQLArgType,
-    QualifiedTable, SUPPORTED_INT_GQL_ARGUMENTS, SUPPORTED_STRING_GQL_ARGUMENTS,
+    field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
+    to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
+    QualifiedTable,
 };
 
 pub async fn healthz_handler(_req: actix_web::HttpRequest) -> String {
@@ -105,40 +107,74 @@ fn fetch_result_from_query_fields<'a>(
             let table_name = field.name.to_string();
             let alias = field.alias.map(String::from);
             let root_field_name = FieldName::new(&table_name, alias);
-            let mut field_args: IndexMap<String, GQLArgType> = IndexMap::new();
+            let mut field_args: IndexMap<String, GQLArgType<OrderByOptions>> = IndexMap::new();
             let sub_fields = selection_set_fields_parser(&field.selection_set);
 
             if !field.arguments.is_empty() {
                 for root_field_arg in field.arguments.iter() {
                     let arg_name = root_field_arg.0.to_string();
                     let arg_value = &root_field_arg.1;
-                    if SUPPORTED_STRING_GQL_ARGUMENTS.contains(&arg_name.as_str()) {
-                        let convert_to_string_arg = to_string_arg(arg_name, arg_value);
-                        if let Ok(fa) = convert_to_string_arg {
-                            let str_fields = field_names_to_name_list(&sub_fields);
-                            if str_fields.contains(&fa.1.get_string()) {
-                                field_args.insert(fa.0, fa.1);
-                            } else {
-                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                    error: format!(
-                                        "The value for `distinct_on` should be one of: {:?}",
-                                        str_fields
-                                    ),
+                    match arg_name.as_str() {
+                        "order_by" => {
+                            let str_field_names = field_names_to_name_list(&sub_fields);
+                            if !is_order_by_keys_valid(&str_field_names, arg_value) {
+                                return actix_web::HttpResponse::Ok().json(ErrorResponse{
+                                    error: format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?} and should be used at most once", arg_value, str_field_names)
                                 });
                             }
-                        } else if let Err(e) = convert_to_string_arg {
-                            return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                error: e.to_string(),
-                            });
+                            let convert_to_object_arg = to_object_arg(
+                                arg_name.to_string(),
+                                arg_value,
+                                from_parser_value_to_order_by_option,
+                            );
+                            if let Ok(fa) = convert_to_object_arg {
+                                field_args.insert(fa.0, fa.1);
+                            } else if let Err(e) = convert_to_object_arg {
+                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                    error: e.to_string(),
+                                });
+                            }
                         }
-                    } else if SUPPORTED_INT_GQL_ARGUMENTS.contains(&arg_name.as_str()) {
-                        let convert_to_int_arg = to_int_arg(arg_name, arg_value);
-                        if let Ok(fa) = convert_to_int_arg {
-                            field_args.insert(fa.0, fa.1);
-                        } else if let Err(e) = convert_to_int_arg {
-                            return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                error: e.to_string(),
-                            });
+                        "limit" | "offset" => {
+                            let convert_to_int_arg = to_int_arg(arg_name.to_string(), arg_value);
+                            if let Ok(fa) = convert_to_int_arg {
+                                field_args.insert(fa.0, fa.1);
+                            } else if let Err(e) = convert_to_int_arg {
+                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                    error: e.to_string(),
+                                });
+                            }
+                        }
+                        "distinct_on" => {
+                            let convert_to_string_arg =
+                                to_string_arg(arg_name.to_string(), arg_value);
+                            match convert_to_string_arg {
+                                Ok(fa) => {
+                                    let str_fields = field_names_to_name_list(&sub_fields);
+                                    if str_fields.contains(&fa.1.get_string()) {
+                                        field_args.insert(fa.0, fa.1);
+                                    } else {
+                                        return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                            error: format!(
+                                            "The value for `distinct_on` should be one of: {:?}",
+                                            str_fields
+                                        ),
+                                        });
+                                    }
+                                }
+                                Err(e) => {
+                                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                        error: e.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        _ => {
+                            // NOTE: we're completely disregarding the users argument if it's none of the above
+                            warn!(
+                                "Arguement `{}` isn't supported and hence being ignored in the query",
+                                arg_name // TODO: maybe include the query as well?
+                            );
                         }
                     }
                 }

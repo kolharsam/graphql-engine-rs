@@ -1,13 +1,14 @@
+use postgres::{Client, NoTls, Row};
+
 use crate::error;
 use crate::types;
-use crate::types::GQLArgType;
-use indexmap::IndexMap;
-use postgres::{Client, NoTls, Row};
+use crate::types::GQLArgTypeWithOrderBy;
+use crate::utils;
 
 pub fn get_pg_client(connection_string: String) -> Client {
     let client = Client::connect(&connection_string, NoTls);
     match client {
-        Ok(c) => c,
+        Ok(pg_client) => pg_client,
         // NOTE: Panic-ing since this is a crisis, the DB is out,
         // should move to a more safe handling of this sooner than later
         Err(e) => panic!(
@@ -21,14 +22,12 @@ pub fn get_pg_client(connection_string: String) -> Client {
 fn add_int_arg_to_query(
     query_str: &mut String,
     arg_name: &str,
-    arg_map: &IndexMap<String, GQLArgType>,
+    arg_value: Option<&GQLArgTypeWithOrderBy>,
 ) {
-    let uppercased_arg_name = arg_name.to_uppercase();
-    let arg_value = arg_map.get(arg_name);
     match arg_value {
         None => (),
         Some(val) => {
-            query_str.push_str(format!("{} {} ", uppercased_arg_name, val.get_num()).as_str());
+            query_str.push_str(format!("{} {} ", arg_name.to_uppercase(), val.get_num()).as_str());
         }
     }
 }
@@ -79,15 +78,46 @@ pub fn get_rows_gql_query(
     query.push_str(format!(" FROM \"public\".\"{}\" ", root_field.name()).as_str());
 
     if query_has_args {
-        for field_arg in types::SUPPORTED_INT_GQL_ARGUMENTS.iter() {
-            match *field_arg {
-                "limit" => {
-                    add_int_arg_to_query(&mut query, "limit", &field_info.root_field_arguments);
+        types::SUPPORTED_INT_GQL_ARGUMENTS
+            .iter()
+            .for_each(|field_arg| {
+                let arg_val = field_info.root_field_arguments.get(*field_arg);
+                match *field_arg {
+                    "limit" => {
+                        add_int_arg_to_query(&mut query, "limit", arg_val);
+                    }
+                    "offset" => {
+                        add_int_arg_to_query(&mut query, "offset", arg_val);
+                    }
+                    _ => (),
                 }
-                "offset" => {
-                    add_int_arg_to_query(&mut query, "offset", &field_info.root_field_arguments);
+            });
+    }
+
+    // See if there's a requirement of the `order by` clause
+    if query_has_args && field_info.root_field_arguments.contains_key("order_by") {
+        let order_by_cols = field_info.root_field_arguments.get("order_by");
+        match order_by_cols {
+            Some(val) => {
+                query.push_str(" ORDER BY ");
+                let order_by_map = val.get_object();
+
+                for (col_name, order_by_clause) in order_by_map.iter() {
+                    let quoted_col_name = utils::dquote(col_name);
+                    query.push_str(
+                        format!("{} {},", quoted_col_name, order_by_clause.to_sql()).as_str(),
+                    );
                 }
-                _ => (),
+
+                // NOTE: Popping the last character here for the hanging comma that
+                // might be present upon adding these statements to the query string
+                query.pop();
+            }
+            // NOTE: this is not plausible
+            None => {
+                return Err(error::GQLRSError::new(error::GQLRSErrorType::InvalidInput(
+                    "argument value not found".to_string(),
+                )));
             }
         }
     }

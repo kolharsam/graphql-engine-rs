@@ -1,0 +1,8 @@
+query GetUsers {
+  users(order_by: {name: asc, age: asc_nulls_first, comment: asc_nulls_last}) {
+    id: user_id
+    name
+    age
+    comment
+  }
+}
