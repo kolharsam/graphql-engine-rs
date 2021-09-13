@@ -119,7 +119,7 @@ fn fetch_result_from_query_fields<'a>(
                             let str_field_names = field_names_to_name_list(&sub_fields);
                             if !is_order_by_keys_valid(&str_field_names, arg_value) {
                                 return actix_web::HttpResponse::Ok().json(ErrorResponse{
-                                    error: format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?}", arg_value, str_field_names)
+                                    error: format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?} and should be used at most once", arg_value, str_field_names)
                                 });
                             }
                             let convert_to_object_arg = to_object_arg(
@@ -148,25 +148,25 @@ fn fetch_result_from_query_fields<'a>(
                         "distinct_on" => {
                             let convert_to_string_arg =
                                 to_string_arg(arg_name.to_string(), arg_value);
-                            if let Ok(fa) = convert_to_string_arg {
-                                let str_fields = field_names_to_name_list(&sub_fields);
-                                // NOTE: this is very specific to the case of `distinct_on`
-                                // we might not need to check that each arg that takes
-                                // values of type `String` should be bounded by the column names
-                                if str_fields.contains(&fa.1.get_string()) {
-                                    field_args.insert(fa.0, fa.1);
-                                } else {
-                                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                        error: format!(
+                            match convert_to_string_arg {
+                                Ok(fa) => {
+                                    let str_fields = field_names_to_name_list(&sub_fields);
+                                    if str_fields.contains(&fa.1.get_string()) {
+                                        field_args.insert(fa.0, fa.1);
+                                    } else {
+                                        return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                            error: format!(
                                             "The value for `distinct_on` should be one of: {:?}",
                                             str_fields
                                         ),
+                                        });
+                                    }
+                                }
+                                Err(e) => {
+                                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                        error: e.to_string(),
                                     });
                                 }
-                            } else if let Err(e) = convert_to_string_arg {
-                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                    error: e.to_string(),
-                                });
                             }
                         }
                         _ => {
