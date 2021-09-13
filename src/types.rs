@@ -163,23 +163,32 @@ fn field_name_to_sql_with_alias() {
 // to do operations. The AST is much more
 // sophisticated and hence can become cumbersome
 #[derive(Serialize, Clone, Debug)]
-pub enum GQLArgType {
+// NOTE: We can keep increasing the types that this
+// struct uses to ensure that we are writing type safe code.
+// Certainly, there's no element of elegance to it. But,
+// nevertheless should help the developer to write much simpler
+// functions for the processing of the AST and SQL code
+pub enum GQLArgType<T> {
     // NOTE: supported for [distinct_on]
     String(String),
     // NOTE: supported for [limit, offset]
     Int(i64),
     // NOTE: supported for [order_by]
-    Object(IndexMap<String, String>),
+    Object(IndexMap<String, T>),
 }
 
-type FieldArguments = indexmap::IndexMap<String, GQLArgType>;
+pub type GQLArgTypeWithOrderBy = GQLArgType<OrderByOptions>;
+type FieldArguments = indexmap::IndexMap<String, GQLArgTypeWithOrderBy>;
 
-impl GQLArgType {
+impl<T> GQLArgType<T> {
     // NOTE: functions like the one's defined below
     // should be limited in usage since we can go
     // wrong quite easily since we're relying on the
     // developer's conscience over the type system
     // hence opening up an avenue for bugs and issues
+
+    // NOTE: for this function, it might be best to do
+    // some `return-type polymorphism`
 
     pub fn get_num(&self) -> i64 {
         if let GQLArgType::Int(num) = self {
@@ -199,11 +208,15 @@ impl GQLArgType {
         "".to_string()
     }
 
-    pub fn get_object(&self) -> IndexMap<String, String> {
+    pub fn get_object(&self) -> IndexMap<String, T>
+    where
+        T: Clone,
+    {
         if let GQLArgType::Object(obj) = &self {
             return obj.clone();
         }
-
+        // FIXME?: This should/would never happen
+        // unless we use it incorrectly
         IndexMap::new()
     }
 }
@@ -211,7 +224,7 @@ impl GQLArgType {
 #[derive(Serialize, Clone, Debug)]
 pub struct FieldInfo {
     pub fields: Vec<FieldName>,
-    pub root_field_arguments: indexmap::IndexMap<String, GQLArgType>,
+    pub root_field_arguments: indexmap::IndexMap<String, GQLArgTypeWithOrderBy>,
 }
 
 impl FieldInfo {
@@ -226,7 +239,7 @@ impl FieldInfo {
 pub fn to_string_arg<'a>(
     arg_name: String,
     arg_val: &graphql_parser::query::Value<'a, &'a str>,
-) -> Result<(String, GQLArgType), error::GQLRSError> {
+) -> Result<(String, GQLArgTypeWithOrderBy), error::GQLRSError> {
     if let graphql_parser::query::Value::Enum(st) = arg_val {
         return Ok((arg_name, GQLArgType::String(st.to_string())));
     }
@@ -239,7 +252,7 @@ pub fn to_string_arg<'a>(
 pub fn to_int_arg<'a>(
     arg_name: String,
     arg_val: &graphql_parser::query::Value<'a, &'a str>,
-) -> Result<(String, GQLArgType), error::GQLRSError> {
+) -> Result<(String, GQLArgTypeWithOrderBy), error::GQLRSError> {
     if let graphql_parser::query::Value::Int(num) = arg_val {
         match num.as_i64() {
             Some(n) => return Ok((arg_name, GQLArgType::Int(n))),
@@ -256,44 +269,48 @@ pub fn to_int_arg<'a>(
     )))
 }
 
-// TODO: refactor the args processing part to have a function for each of
-// the different args that are being supported currently
-/**
- *
- * match arg_name {
- *  "limit" => { // do something... },
- *  "order_by" => { .... },
- *  .....
- * }
- */
-
-pub fn to_object_arg<'a>(
-    arg_name: String,
-    arg_val: &graphql_parser::query::Value<'a, &'a str>,
-    supported_keys: Vec<String>,
-) -> Result<(String, GQLArgType), error::GQLRSError> {
-    if let graphql_parser::query::Value::Object(arg_bmap) = arg_val {
+// NOTE: This helper function will help us ensure that `order_by` argument is always
+// supplied with legitimate keys. Which in this case would be the column names of the table
+pub fn is_order_by_keys_valid<'a>(
+    valid_keys: &[String],
+    supplied_value: &graphql_parser::query::Value<'a, &'a str>,
+) -> bool {
+    if let graphql_parser::query::Value::Object(arg_bmap) = supplied_value {
         if arg_bmap.is_empty() {
-            return Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                format!("{} cannot be empty", arg_name),
-            )));
+            return false;
         }
 
-        let mut arg_map: IndexMap<String, String> = IndexMap::new();
+        return arg_bmap
+            .keys()
+            .all(|key| valid_keys.contains(&key.to_string()));
+    }
+
+    false
+}
+
+pub fn to_object_arg<'a, T>(
+    arg_name: String,
+    arg_val: &graphql_parser::query::Value<'a, &'a str>,
+    make_value_fn: fn(v: graphql_parser::query::Value<'a, &'a str>) -> Option<T>,
+) -> Result<(String, GQLArgType<T>), error::GQLRSError> {
+    if let graphql_parser::query::Value::Object(arg_bmap) = arg_val {
+        let mut arg_map: IndexMap<String, T> = IndexMap::new();
 
         for (key_name, value) in arg_bmap.iter() {
-            if let graphql_parser::query::Value::Enum(val) = value {
-                if supported_keys.contains(&<&str>::clone(key_name).to_string()) {
-                    arg_map.insert(key_name.to_string(), val.to_string());
-                } else {
-                    return Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                        format!("{} is not a valid column of the table; Cannot be used as part of the query", key_name)
+            let arg_value = make_value_fn(value.clone());
+            match arg_value {
+                Some(v) => {
+                    arg_map.insert(key_name.to_string(), v);
+                }
+                None => {
+                    return Err(error::GQLRSError::new(error::GQLRSErrorType::InvalidInput(
+                        format!(
+                            "Incorrect value {} supplied to key {} in `{}` argument",
+                            value, key_name, arg_name
+                        ),
                     )));
                 }
             }
-            // NOTE: we're currently ignoring `Value`s of other types
-            // since we only support `order_by` now, which only requires
-            // other strings as values.
         }
 
         return Ok((arg_name, GQLArgType::Object(arg_map)));
@@ -304,16 +321,55 @@ pub fn to_object_arg<'a>(
     )))
 }
 
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum OrderByOptions {
+    Asc,
+    AscNullsFirst,
+    AscNullsLast,
+    Desc,
+    DescNullsFirst,
+    DescNullsLast,
+}
+
+impl OrderByOptions {
+    // NOTE: this method has to be implemented by all types that would
+    //
+    pub fn to_sql(&self) -> &str {
+        match self {
+            OrderByOptions::Asc => "ASC",
+            OrderByOptions::AscNullsFirst => "ASC NULLS FIRST",
+            OrderByOptions::AscNullsLast => "ASC NULLS LAST",
+            OrderByOptions::Desc => "DESC",
+            OrderByOptions::DescNullsFirst => "DESC NULLS FIRST",
+            OrderByOptions::DescNullsLast => "DESC NULLS LAST",
+        }
+    }
+}
+
+pub fn from_parser_value_to_order_by_option<'a>(
+    val: graphql_parser::query::Value<'a, &'a str>,
+) -> Option<OrderByOptions> {
+    if let graphql_parser::query::Value::Enum(str_val) = val {
+        return to_order_by_option_value(str_val);
+    }
+
+    None
+}
+
+// TODO: use `serde` for this purpose instead
+fn to_order_by_option_value(v: &str) -> Option<OrderByOptions> {
+    match v {
+        "asc" => Some(OrderByOptions::Asc),
+        "asc_nulls_first" => Some(OrderByOptions::AscNullsFirst),
+        "asc_nulls_last" => Some(OrderByOptions::AscNullsLast),
+        "desc" => Some(OrderByOptions::Desc),
+        "desc_nulls_first" => Some(OrderByOptions::DescNullsFirst),
+        "desc_nulls_last" => Some(OrderByOptions::DescNullsLast),
+        _ => None,
+    }
+}
+
 // NOTE: these argument names are case sensitive, in case they're
 // not these exactly we have every right to reject the query!
-pub const SUPPORTED_STRING_GQL_ARGUMENTS: [&str; 1] = ["distinct_on"];
 pub const SUPPORTED_INT_GQL_ARGUMENTS: [&str; 2] = ["offset", "limit"];
-pub const SUPPORTED_OBJECT_GQL_ARGUMENTS: [&str; 1] = ["order_by"];
-pub const ORDER_BY_CLAUSES: [&str; 6] = [
-    "asc",
-    "asc_nulls_first",
-    "asc_nulls_last",
-    "desc",
-    "desc_nulls_first",
-    "desc_nulls_last",
-];

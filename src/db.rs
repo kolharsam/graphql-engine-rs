@@ -2,7 +2,7 @@ use postgres::{Client, NoTls, Row};
 
 use crate::error;
 use crate::types;
-use crate::types::{GQLArgType, ORDER_BY_CLAUSES};
+use crate::types::GQLArgTypeWithOrderBy;
 use crate::utils;
 
 pub fn get_pg_client(connection_string: String) -> Client {
@@ -19,7 +19,11 @@ pub fn get_pg_client(connection_string: String) -> Client {
 }
 
 #[inline]
-fn add_int_arg_to_query(query_str: &mut String, arg_name: &str, arg_value: Option<&GQLArgType>) {
+fn add_int_arg_to_query(
+    query_str: &mut String,
+    arg_name: &str,
+    arg_value: Option<&GQLArgTypeWithOrderBy>,
+) {
     match arg_value {
         None => (),
         Some(val) => {
@@ -74,18 +78,20 @@ pub fn get_rows_gql_query(
     query.push_str(format!(" FROM \"public\".\"{}\" ", root_field.name()).as_str());
 
     if query_has_args {
-        for field_arg in types::SUPPORTED_INT_GQL_ARGUMENTS.iter() {
-            let arg_val = field_info.root_field_arguments.get(*field_arg);
-            match *field_arg {
-                "limit" => {
-                    add_int_arg_to_query(&mut query, "limit", arg_val);
+        types::SUPPORTED_INT_GQL_ARGUMENTS
+            .iter()
+            .for_each(|field_arg| {
+                let arg_val = field_info.root_field_arguments.get(*field_arg);
+                match *field_arg {
+                    "limit" => {
+                        add_int_arg_to_query(&mut query, "limit", arg_val);
+                    }
+                    "offset" => {
+                        add_int_arg_to_query(&mut query, "offset", arg_val);
+                    }
+                    _ => (),
                 }
-                "offset" => {
-                    add_int_arg_to_query(&mut query, "offset", arg_val);
-                }
-                _ => (),
-            }
-        }
+            });
     }
 
     // See if there's a requirement of the `order by` clause
@@ -96,49 +102,18 @@ pub fn get_rows_gql_query(
                 query.push_str(" ORDER BY ");
                 let order_by_map = val.get_object();
 
-                for (col_name, order_clause_str) in order_by_map.iter() {
-                    let order_clause = order_clause_str.as_str();
+                for (col_name, order_by_clause) in order_by_map.iter() {
                     let quoted_col_name = utils::dquote(col_name);
-                    match order_clause {
-                        "asc" => {
-                            query.push_str(format!("{} ASC,", quoted_col_name).as_str());
-                        }
-                        "asc_nulls_first" => {
-                            query
-                                .push_str(format!("{} ASC NULLS FIRST,", quoted_col_name).as_str());
-                        }
-                        "asc_nulls_last" => {
-                            query.push_str(format!("{} ASC NULLS LAST,", quoted_col_name).as_str());
-                        }
-                        "desc" => {
-                            query.push_str(format!("{} DESC,", quoted_col_name).as_str());
-                        }
-                        "desc_nulls_first" => {
-                            query.push_str(
-                                format!("{} DESC NULLS FIRST,", quoted_col_name).as_str(),
-                            );
-                        }
-                        "desc_nulls_last" => {
-                            query
-                                .push_str(format!("{} DESC NULLS LAST,", quoted_col_name).as_str());
-                        }
-                        _ => {
-                            return Err(error::GQLRSError::new(
-                                error::GQLRSErrorType::InvalidInput(format!(
-                                    "Value for \"order_by\" should be one of: {:?}",
-                                    ORDER_BY_CLAUSES
-                                )),
-                            ));
-                        }
-                    }
+                    query.push_str(
+                        format!("{} {},", quoted_col_name, order_by_clause.to_sql()).as_str(),
+                    );
                 }
 
                 // NOTE: Popping the last character here for the hanging comma that
                 // might be present upon adding these statements to the query string
                 query.pop();
             }
-            // NOTE: this is again not plausible
-            // TODO: but this should be reported as error if it does occur
+            // NOTE: this is not plausible
             None => {
                 return Err(error::GQLRSError::new(error::GQLRSErrorType::InvalidInput(
                     "argument value not found".to_string(),
