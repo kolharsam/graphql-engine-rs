@@ -280,9 +280,19 @@ pub fn is_order_by_keys_valid<'a>(
             return false;
         }
 
+        let keys_vec: Vec<&str> = arg_bmap.keys().cloned().collect();
+
+        // Checking that keys are valid, in our case here would be
+        // 1) to ensure that keys are all valid field names
+        // 2) number of keys are at most = number of fields or columns on the table
+        // 3) no duplicate keys found in the object
         return arg_bmap
             .keys()
-            .all(|key| valid_keys.contains(&key.to_string()));
+            .all(|key| valid_keys.contains(&key.to_string()))
+            && arg_bmap.len() <= valid_keys.len()
+            && arg_bmap
+                .keys()
+                .all(|key| utils::get_frequency(&keys_vec, key) == 1);
     }
 
     false
