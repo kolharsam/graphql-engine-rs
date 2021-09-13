@@ -1,7 +1,6 @@
 use actix_web::http;
 use log::{debug, info, trace, warn};
 
-mod context;
 mod db;
 mod error;
 mod logger;
@@ -129,6 +128,9 @@ mod tests {
             ))
             .await;
 
+        // TODO: automate this part too. we can fetch the dir. list
+        // and based on that we could ensure that we don't have to
+        // manually add entries for tests
         let test_folders = [
             "basic_query",
             "basic_query_test_key_order",
@@ -136,6 +138,7 @@ mod tests {
             "query_with_aliases",
             "query_order_by_asc",
             "query_order_by_desc",
+            "query_order_by_asc_desc",
         ];
 
         // NOTE: Try and make this parallelised
