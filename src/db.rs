@@ -1,21 +1,18 @@
 use postgres::{Client, NoTls, Row};
+use r2d2::{Error, Pool};
+use r2d2_postgres::PostgresConnectionManager;
 
 use crate::error;
 use crate::types;
 use crate::types::GQLArgTypeWithOrderBy;
 use crate::utils;
 
-pub fn get_pg_client(connection_string: String) -> Client {
-    let client = Client::connect(&connection_string, NoTls);
-    match client {
-        Ok(pg_client) => pg_client,
-        // NOTE: Panic-ing since this is a crisis, the DB is out,
-        // should move to a more safe handling of this sooner than later
-        Err(e) => panic!(
-            "{}",
-            error::GQLRSError::new(error::GQLRSErrorType::DBError(e.to_string()))
-        ),
-    }
+pub fn get_pg_pool(
+    connection_string: &str,
+) -> Result<Pool<PostgresConnectionManager<NoTls>>, Error> {
+    // NOTE: NoTls is only for the time being, we might have to support TLS based connections eventually
+    let manager = PostgresConnectionManager::new(connection_string.parse().unwrap(), NoTls);
+    Pool::new(manager)
 }
 
 #[inline]
@@ -32,6 +29,7 @@ fn add_int_arg_to_query(
     }
 }
 
+// This is a helper to construct the SQL query to fetch results from the database
 pub fn get_rows_gql_query(
     client: &mut Client,
     root_field: &types::FieldName,
