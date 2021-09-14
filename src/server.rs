@@ -4,16 +4,18 @@ use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
 
-use crate::db;
-use crate::error;
 use crate::types::{
     field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
     to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
     QualifiedTable,
 };
+use crate::{context, db, error};
 
-pub async fn healthz_handler(_req: actix_web::HttpRequest) -> String {
-    "OK".to_string()
+pub async fn healthz_handler(
+    srv_ctx: actix_web::web::Data<context::ServerCtx>,
+    _req: actix_web::HttpRequest,
+) -> actix_web::HttpResponse {
+    actix_web::web::HttpResponse::Ok().json(srv_ctx.get_status_json())
     // TODO: add something for "ERROR"
 }
 
@@ -245,11 +247,10 @@ fn selection_set_fields_parser<'a>(
 // NOTE: Only GraphQL Queries and Selection Sets are supported.
 //       Mutations, Subscriptions will be supported eventually.
 pub async fn graphql_handler(
-    srv_ctx: actix_web::web::Data<&'static str>,
+    srv_ctx: actix_web::web::Data<context::ServerCtx>,
     payload: actix_web::web::Json<GraphQLRequest>,
 ) -> actix_web::HttpResponse {
-    let conn_str = srv_ctx.get_ref();
-    let mut pg_client = db::get_pg_client(conn_str.to_string());
+    let mut pg_client = srv_ctx.get_connection_pool().get().unwrap();
 
     match graphql_parser::parse_query::<&str>(&payload.query) {
         // NOTE: We only execute the first query/mutation/subscription that
