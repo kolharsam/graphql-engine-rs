@@ -26,6 +26,8 @@ json = "0.12"
 indexmap = { version = "1.7.0", features = ["serde", "serde-1"] }
 thiserror = "1.0.26"
 anyhow = "1.0.43"
+r2d2 = "0.8.9"
+r2d2_postgres = "0.18.1"
 
 [dev-dependencies]
 lazy_static = "1.4.0"
