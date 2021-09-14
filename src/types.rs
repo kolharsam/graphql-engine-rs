@@ -30,22 +30,15 @@ impl std::fmt::Display for QualifiedTable {
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Metadata {
     pub source_name: String,
-    pub connection_string: String,
     pub tables: Vec<QualifiedTable>,
 }
 
 impl Metadata {
-    pub fn new(&self, source_name: String, connection_string: String) -> Metadata {
+    pub fn new(&self, source_name: String) -> Metadata {
         Metadata {
             source_name,
-            connection_string,
             tables: Vec::new(),
         }
-    }
-
-    pub fn update_connection_string(&mut self, connection_string: String) {
-        // TODO: validate connection string?
-        self.connection_string = connection_string;
     }
 
     fn is_table_tracked(&self, qualified_table: &QualifiedTable) -> bool {
