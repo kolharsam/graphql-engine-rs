@@ -1,4 +1,4 @@
-.PHONY: test-clean test migrate
+.PHONY: test-clean test migrate fmt set-default-db lint
 
 # Runs all the tests with output to STDOUT
 test:
@@ -14,3 +14,12 @@ migrate:
 
 dev:
 	cargo run -- -c $(DATABASE_URL)
+
+fmt:
+	cargo fmt
+
+lint:
+	cargo clippy
+
+set-default-db:
+	export DATABASE_URL="postgres://postgres:postgrespassword@localhost:5432/postgres"
