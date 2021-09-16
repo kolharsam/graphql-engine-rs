@@ -3,8 +3,7 @@ use r2d2::{Error, Pool};
 use r2d2_postgres::PostgresConnectionManager;
 
 use crate::error;
-use crate::types;
-use crate::types::GQLArgTypeWithOrderBy;
+use crate::gql_types::{FieldInfo, FieldName, GQLArgTypeWithOrderBy, SUPPORTED_INT_GQL_ARGUMENTS};
 use crate::utils;
 
 pub fn get_pg_pool(
@@ -32,8 +31,8 @@ fn add_int_arg_to_query(
 // This is a helper to construct the SQL query to fetch results from the database
 pub fn get_rows_gql_query(
     client: &mut Client,
-    root_field: &types::FieldName,
-    field_info: &types::FieldInfo,
+    root_field: &FieldName,
+    field_info: &FieldInfo,
 ) -> Result<Row, error::GQLRSError> {
     let mut query = String::new();
     let query_has_args = !field_info.root_field_arguments.is_empty();
@@ -76,20 +75,18 @@ pub fn get_rows_gql_query(
     query.push_str(format!(" FROM \"public\".\"{}\" ", root_field.name()).as_str());
 
     if query_has_args {
-        types::SUPPORTED_INT_GQL_ARGUMENTS
-            .iter()
-            .for_each(|field_arg| {
-                let arg_val = field_info.root_field_arguments.get(*field_arg);
-                match *field_arg {
-                    "limit" => {
-                        add_int_arg_to_query(&mut query, "limit", arg_val);
-                    }
-                    "offset" => {
-                        add_int_arg_to_query(&mut query, "offset", arg_val);
-                    }
-                    _ => (),
+        SUPPORTED_INT_GQL_ARGUMENTS.iter().for_each(|field_arg| {
+            let arg_val = field_info.root_field_arguments.get(*field_arg);
+            match *field_arg {
+                "limit" => {
+                    add_int_arg_to_query(&mut query, "limit", arg_val);
                 }
-            });
+                "offset" => {
+                    add_int_arg_to_query(&mut query, "offset", arg_val);
+                }
+                _ => (),
+            }
+        });
     }
 
     // See if there's a requirement of the `order by` clause
