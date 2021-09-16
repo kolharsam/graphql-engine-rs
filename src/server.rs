@@ -4,11 +4,11 @@ use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
 
-use crate::types::{
+use crate::gql_types::{
     field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
     to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
-    QualifiedTable,
 };
+use crate::metadata::QualifiedTable;
 use crate::{context, db, error};
 
 pub async fn healthz_handler(

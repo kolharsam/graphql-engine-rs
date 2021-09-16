@@ -4,10 +4,11 @@ use log::{debug, info, trace, warn};
 mod context;
 mod db;
 mod error;
+mod gql_types;
 mod logger;
+mod metadata;
 mod options;
 mod server;
-mod types;
 mod utils;
 
 #[actix_web::main]
