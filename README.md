@@ -1,5 +1,7 @@
 # graphql-engine-rs
 
+[![Build & Test Workflow badge](https://github.com/kolharsam/graphql-engine-rs/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/kolharsam/graphql-engine-rs/actions/workflows/rust.yml)
+
 The Hasura GraphQL Engine - in Rust
 
 This is not official. This is just a toy project. 
