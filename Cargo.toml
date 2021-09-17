@@ -20,15 +20,18 @@ actix = "0.10.0"
 actix-web = "3"
 actix-service = "1.0.0"
 actix-web-actors = "3.0.0"
+actix-cors = "0.5.4"
+actix-rt = "2.2.0"
 futures = "0.3"
 env_logger = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 json = "0.12"
-actix-cors = "0.5.4"
 indexmap = { version = "1.7.0", features = ["serde", "serde-1"] }
 thiserror = "1.0.26"
 anyhow = "1.0.43"
 uuid = { version = "0.8.2", features = ["serde", "v4"] }
+r2d2 = "0.8.9"
+r2d2_postgres = "0.18.1"
 
 [dev-dependencies]
 lazy_static = "1.4.0"

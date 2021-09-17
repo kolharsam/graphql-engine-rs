@@ -1,0 +1,6 @@
+query GetAuthors {
+  AUthors_TABLE : authors {
+    author_id: id
+    name: author_name
+  }
+}

@@ -1,17 +1,21 @@
 use indexmap::IndexMap;
+use log::warn;
 use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
 
-use crate::db;
-use crate::error;
 use crate::types::{
-    field_names_to_name_list, to_int_arg, to_string_arg, FieldInfo, FieldName, GQLArgType,
-    QualifiedTable, SUPPORTED_INT_GQL_ARGUMENTS, SUPPORTED_STRING_GQL_ARGUMENTS,
+    field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
+    to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
+    QualifiedTable,
 };
+use crate::{context, db, error};
 
-pub async fn healthz_handler(_req: actix_web::HttpRequest) -> String {
-    "OK".to_string()
+pub async fn healthz_handler(
+    srv_ctx: actix_web::web::Data<context::ServerCtx>,
+    _req: actix_web::HttpRequest,
+) -> actix_web::HttpResponse {
+    actix_web::web::HttpResponse::Ok().json(srv_ctx.get_status_json())
     // TODO: add something for "ERROR"
 }
 
@@ -36,9 +40,15 @@ pub struct ErrorResponse {
 }
 
 // NOTE: this should be used for sending the API response
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct DataResponse {
     data: IndexMap<String, serde_json::Value>,
+}
+
+impl DataResponse {
+    pub fn new(data: IndexMap<String, serde_json::Value>) -> DataResponse {
+        DataResponse { data }
+    }
 }
 
 pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::HttpResponse {
@@ -70,15 +80,15 @@ pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::Http
     // })
 }
 
-fn empty_query_variables() -> IndexMap<String, String> {
+pub fn empty_query_variables() -> IndexMap<String, String> {
     IndexMap::new()
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct GraphQLRequest {
-    query: String,
+    pub query: String,
     #[serde(default = "empty_query_variables")]
-    variables: IndexMap<String, String>,
+    pub variables: IndexMap<String, String>,
 }
 
 type GQLResult = IndexMap<String, serde_json::Value>;
@@ -99,37 +109,74 @@ fn fetch_result_from_query_fields<'a>(
             let table_name = field.name.to_string();
             let alias = field.alias.map(String::from);
             let root_field_name = FieldName::new(&table_name, alias);
-            let mut field_args: IndexMap<String, GQLArgType> = IndexMap::new();
+            let mut field_args: IndexMap<String, GQLArgType<OrderByOptions>> = IndexMap::new();
             let sub_fields = selection_set_fields_parser(&field.selection_set);
 
             if !field.arguments.is_empty() {
                 for root_field_arg in field.arguments.iter() {
                     let arg_name = root_field_arg.0.to_string();
                     let arg_value = &root_field_arg.1;
-                    if SUPPORTED_STRING_GQL_ARGUMENTS.contains(&arg_name.as_str()) {
-                        let convert_to_string_arg = to_string_arg(arg_name, arg_value);
-                        if let Ok(fa) = convert_to_string_arg {
-                            let str_fields = field_names_to_name_list(&sub_fields);
-                            if str_fields.contains(&fa.1.get_string()) {
-                                field_args.insert(fa.0, fa.1);
-                            } else {
-                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                    error: format!("The value should be one of: {:?}", str_fields),
+                    match arg_name.as_str() {
+                        "order_by" => {
+                            let str_field_names = field_names_to_name_list(&sub_fields);
+                            if !is_order_by_keys_valid(&str_field_names, arg_value) {
+                                return actix_web::HttpResponse::Ok().json(ErrorResponse{
+                                    error: format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?} and should be used at most once", arg_value, str_field_names)
                                 });
                             }
-                        } else if let Err(e) = convert_to_string_arg {
-                            return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                error: e.to_string(),
-                            });
+                            let convert_to_object_arg = to_object_arg(
+                                arg_name.to_string(),
+                                arg_value,
+                                from_parser_value_to_order_by_option,
+                            );
+                            if let Ok(fa) = convert_to_object_arg {
+                                field_args.insert(fa.0, fa.1);
+                            } else if let Err(e) = convert_to_object_arg {
+                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                    error: e.to_string(),
+                                });
+                            }
                         }
-                    } else if SUPPORTED_INT_GQL_ARGUMENTS.contains(&arg_name.as_str()) {
-                        let convert_to_int_arg = to_int_arg(arg_name, arg_value);
-                        if let Ok(fa) = convert_to_int_arg {
-                            field_args.insert(fa.0, fa.1);
-                        } else if let Err(e) = convert_to_int_arg {
-                            return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                error: e.to_string(),
-                            });
+                        "limit" | "offset" => {
+                            let convert_to_int_arg = to_int_arg(arg_name.to_string(), arg_value);
+                            if let Ok(fa) = convert_to_int_arg {
+                                field_args.insert(fa.0, fa.1);
+                            } else if let Err(e) = convert_to_int_arg {
+                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                    error: e.to_string(),
+                                });
+                            }
+                        }
+                        "distinct_on" => {
+                            let convert_to_string_arg =
+                                to_string_arg(arg_name.to_string(), arg_value);
+                            match convert_to_string_arg {
+                                Ok(fa) => {
+                                    let str_fields = field_names_to_name_list(&sub_fields);
+                                    if str_fields.contains(&fa.1.get_string()) {
+                                        field_args.insert(fa.0, fa.1);
+                                    } else {
+                                        return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                            error: format!(
+                                            "The value for `distinct_on` should be one of: {:?}",
+                                            str_fields
+                                        ),
+                                        });
+                                    }
+                                }
+                                Err(e) => {
+                                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
+                                        error: e.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        _ => {
+                            // NOTE: we're completely disregarding the users argument if it's none of the above
+                            warn!(
+                                "Arguement `{}` isn't supported and hence being ignored in the query",
+                                arg_name // TODO: maybe include the query as well?
+                            );
                         }
                     }
                 }
@@ -179,7 +226,7 @@ fn fetch_result_from_query_fields<'a>(
         }
     }
 
-    actix_web::HttpResponse::Ok().json(DataResponse { data: final_res })
+    actix_web::HttpResponse::Ok().json(DataResponse::new(final_res))
 }
 
 fn selection_set_fields_parser<'a>(
@@ -200,67 +247,51 @@ fn selection_set_fields_parser<'a>(
 // NOTE: Only GraphQL Queries and Selection Sets are supported.
 //       Mutations, Subscriptions will be supported eventually.
 pub async fn graphql_handler(
-    srv_ctx: actix_web::web::Data<&'static str>,
-    payload: actix_web::web::Bytes,
+    srv_ctx: actix_web::web::Data<context::ServerCtx>,
+    payload: actix_web::web::Json<GraphQLRequest>,
 ) -> actix_web::HttpResponse {
-    let conn_str = srv_ctx.get_ref();
-    let mut pg_client = db::get_pg_client(conn_str.to_string());
+    let mut pg_client = srv_ctx.get_connection_pool().get().unwrap();
 
-    let payload_to_str = std::str::from_utf8(&payload);
-
-    let parse_result = match payload_to_str {
-        Ok(s) => json::parse(s),
-        Err(_err) => Err(json::Error::FailedUtf8Parsing),
-    };
-
-    let body = parse_result.unwrap_or_else(|e| json::object! { "error" => e.to_string() });
-
-    match serde_json::from_str::<'_, GraphQLRequest>(&body.dump()) {
-        Ok(b) => match graphql_parser::parse_query::<&str>(&b.query) {
-            // NOTE: We only execute the first query/mutation/subscription that
-            // gets matched/parsed. Similar to what Hasura does
-            Ok(q) => match &q.definitions[0] {
-                graphql_parser::query::Definition::Fragment(_) => actix_web::HttpResponse::Ok()
-                    .json(ErrorResponse {
+    match graphql_parser::parse_query::<&str>(&payload.query) {
+        // NOTE: We only execute the first query/mutation/subscription that
+        // gets matched/parsed. Similar to what Hasura does
+        Ok(q) => match &q.definitions[0] {
+            graphql_parser::query::Definition::Fragment(_) => {
+                actix_web::HttpResponse::Ok().json(ErrorResponse {
+                    error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
+                        "Fragments are not yet supported!".to_string(),
+                    ))
+                    .to_string(),
+                })
+            }
+            graphql_parser::query::Definition::Operation(op) => match op {
+                graphql_parser::query::OperationDefinition::Mutation(_) => {
+                    actix_web::HttpResponse::Ok().json(ErrorResponse {
                         error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                            "Fragments are not yet supported!".to_string(),
+                            "Mutations are not yet supported!".to_string(),
                         ))
                         .to_string(),
-                    }),
-                graphql_parser::query::Definition::Operation(op) => match op {
-                    graphql_parser::query::OperationDefinition::Mutation(_) => {
-                        actix_web::HttpResponse::Ok().json(ErrorResponse {
-                            error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                                "Mutations are not yet supported!".to_string(),
-                            ))
-                            .to_string(),
-                        })
-                    }
-                    graphql_parser::query::OperationDefinition::Subscription(_) => {
-                        actix_web::HttpResponse::Ok().json(ErrorResponse {
-                            error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                                "Subscriptions are not yet supported!".to_string(),
-                            ))
-                            .to_string(),
-                        })
-                    }
-                    graphql_parser::query::OperationDefinition::Query(qry) => {
-                        fetch_result_from_query_fields(&qry.selection_set, &mut pg_client)
-                    }
-                    graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                        fetch_result_from_query_fields(sel_set, &mut pg_client)
-                    }
-                },
+                    })
+                }
+                graphql_parser::query::OperationDefinition::Subscription(_) => {
+                    actix_web::HttpResponse::Ok().json(ErrorResponse {
+                        error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
+                            "Subscriptions are not yet supported!".to_string(),
+                        ))
+                        .to_string(),
+                    })
+                }
+                graphql_parser::query::OperationDefinition::Query(qry) => {
+                    fetch_result_from_query_fields(&qry.selection_set, &mut pg_client)
+                }
+                graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
+                    fetch_result_from_query_fields(sel_set, &mut pg_client)
+                }
             },
-            Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
-                // NOTE: this is the error when no valid AST was generated
-                // by the parser or any other parser failures
-                error: e.to_string(),
-            }),
         },
         Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
-            // NOTE: this is the error when the parsed JSON is
-            // not of the type of GraphQLRequest
+            // NOTE: this is the error when no valid AST was generated
+            // by the parser or any other parser failures
             error: e.to_string(),
         }),
     }

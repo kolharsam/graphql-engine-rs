@@ -1,4 +1,4 @@
-name: Rust
+name: Build & Test
 
 on:
   push:
@@ -8,15 +8,45 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/postgres
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
-    - uses: actions/checkout@v2
-    - name: Build
+    - name: Checkout the latest code from branch
+      uses: actions/checkout@v2
+    
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+
+    - uses: Swatinem/rust-cache@v1
+      with:
+          cache-on-failure: true
+      
+    - name: Build project
       run: cargo build --verbose
+
+    - name: Setup basic schema on DB
+      run: make migrate
+
     - name: Run tests
-      run: cargo test --verbose
+      run: make test
