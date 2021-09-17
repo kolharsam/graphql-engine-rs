@@ -10,13 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-
-    - uses: Swatinem/rust-cache@v1
-
     services:
       postgres:
         image: postgres:13
@@ -35,6 +28,13 @@ jobs:
     steps:
     - name: Checkout the latest code from branch
       uses: actions/checkout@v2
+    
+    - uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+
+    - uses: Swatinem/rust-cache@v1
       
     - name: Build project
       run: cargo build --verbose
