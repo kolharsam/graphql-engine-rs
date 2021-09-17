@@ -1,6 +1,10 @@
-name: Lint & Format check
+name: Lint & Format
 
-on: push
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   clippy_check:
