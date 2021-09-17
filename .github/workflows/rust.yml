@@ -35,6 +35,8 @@ jobs:
         toolchain: stable
 
     - uses: Swatinem/rust-cache@v1
+      with:
+          cache-on-failure: true
       
     - name: Build project
       run: cargo build --verbose
