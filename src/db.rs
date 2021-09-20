@@ -35,7 +35,7 @@ pub fn get_rows_gql_query(
     field_info: &FieldInfo,
 ) -> Result<Row, error::GQLRSError> {
     let mut query = String::new();
-    let query_has_args = !field_info.root_field_arguments.is_empty();
+    let query_has_args = !field_info.args().is_empty();
 
     // NOTE: since we're using json_agg here, the DB has to be of v9 or over
     query.push_str(
@@ -47,8 +47,8 @@ pub fn get_rows_gql_query(
     );
 
     // add the distinct on clause (if necessary)
-    if query_has_args && field_info.root_field_arguments.contains_key("distinct_on") {
-        let distinct_col = field_info.root_field_arguments.get("distinct_on");
+    if query_has_args && field_info.args().contains_key("distinct_on") {
+        let distinct_col = field_info.args().get("distinct_on");
         match distinct_col {
             Some(val) => {
                 query.push_str(format!("DISTINCT ON({}) ", val.get_string()).as_str());
@@ -63,7 +63,7 @@ pub fn get_rows_gql_query(
         }
     }
 
-    for field_name in field_info.fields.iter() {
+    for field_name in field_info.fields().iter() {
         query.push_str(format!("{}, ", field_name.to_sql()).as_str());
     }
 
@@ -76,7 +76,7 @@ pub fn get_rows_gql_query(
 
     if query_has_args {
         SUPPORTED_INT_GQL_ARGUMENTS.iter().for_each(|field_arg| {
-            let arg_val = field_info.root_field_arguments.get(*field_arg);
+            let arg_val = field_info.args().get(*field_arg);
             match *field_arg {
                 "limit" => {
                     add_int_arg_to_query(&mut query, "limit", arg_val);
@@ -90,8 +90,8 @@ pub fn get_rows_gql_query(
     }
 
     // See if there's a requirement of the `order by` clause
-    if query_has_args && field_info.root_field_arguments.contains_key("order_by") {
-        let order_by_cols = field_info.root_field_arguments.get("order_by");
+    if query_has_args && field_info.args().contains_key("order_by") {
+        let order_by_cols = field_info.args().get("order_by");
         match order_by_cols {
             Some(val) => {
                 query.push_str(" ORDER BY ");

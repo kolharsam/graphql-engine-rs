@@ -1,4 +1,3 @@
-use actix_web::http;
 use log::{debug, info, trace, warn};
 
 mod context;
@@ -43,7 +42,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 actix_cors::Cors::default()
                     .allow_any_origin()
-                    .allowed_methods(vec!["GET", "POST", "OPTIONS   "])
+                    .allowed_methods(vec!["GET", "POST", "OPTIONS"])
                     .max_age(3600),
             )
             .service(

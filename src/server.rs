@@ -1,3 +1,4 @@
+use actix_web::http::StatusCode;
 use indexmap::IndexMap;
 use log::warn;
 use postgres::types::Json;
@@ -28,10 +29,28 @@ pub enum MetadataMessage {
     ExportMetadata,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug, Clone)]
 pub struct MetadataSuccess {
     success: bool,
     message: String,
+}
+
+fn make_metadata_success_response(message: &str) -> actix_web::HttpResponse {
+    actix_web::web::HttpResponse::Ok().json(MetadataSuccess {
+        success: true,
+        message: String::from(message),
+    })
+}
+
+fn make_metadata_error_response(status: StatusCode, err_message: &str) -> actix_web::HttpResponse {
+    actix_web::web::HttpResponse::build(status).json(ErrorResponse {
+        error: String::from(err_message),
+    })
+}
+
+fn bad_request_response(err_message: &str) -> actix_web::HttpResponse {
+    // NOTE: probably should be making use of currying here
+    make_metadata_error_response(StatusCode::BAD_REQUEST, err_message)
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -51,31 +70,35 @@ impl DataResponse {
     }
 }
 
-pub async fn metadata_handler(srv_ctx: actix_web::web::Data<context::ServerCtx>,
-    payload: actix_web::web::Json<MetadataMessage>) -> actix_web::HttpResponse {
-
-    let body = payload.0.;
-
-    match serde_json::from_str::<'_, MetadataMessage>(&body.dump()) {
-        Ok(b) => actix_web::HttpResponse::Ok()
-            .content_type("application/json")
-            .body(
-                serde_json::to_string(&b)
-                    .unwrap_or_else(|_| "Failed to convert body to a valid string".to_string()),
-            ),
-        Err(e) => actix_web::HttpResponse::build(actix_web::http::StatusCode::BAD_REQUEST).json(
-            ErrorResponse {
-                error: String::from(e),
-            },
-        ),
+pub async fn metadata_handler(
+    srv_ctx: actix_web::web::Data<context::ServerCtx>,
+    payload: actix_web::web::Json<MetadataMessage>,
+) -> actix_web::HttpResponse {
+    let mut server_ctx = srv_ctx.as_ref().to_owned();
+    match payload.into_inner() {
+        MetadataMessage::TrackTable(table) => {
+            match server_ctx.metadata_track_table(table.clone()) {
+                Ok(_) => make_metadata_success_response(
+                    format!("Table {} is now being tracked!", table.to_string()).as_str(),
+                ),
+                Err(err) => bad_request_response(format!("{}", err).as_str()),
+            }
+        }
+        MetadataMessage::UntrackTable(table) => {
+            match server_ctx.metadata_untrack_table(table.clone()) {
+                Ok(_) => make_metadata_success_response(
+                    format!("Table {} has now been un-tracked!", table.to_string()).as_str(),
+                ),
+                Err(err) => bad_request_response(format!("{}", err).as_str()),
+            }
+        }
+        MetadataMessage::ExportMetadata => {
+            actix_web::web::HttpResponse::Ok().json(server_ctx.get_metadata().clone())
+        }
     }
-
-    // MetadataResponse::Success(MetadataSuccess {
-    //     success: true,
-    //     message: "OK".to_string(),
-    // })
 }
 
+#[inline(always)]
 pub fn empty_query_variables() -> IndexMap<String, String> {
     IndexMap::new()
 }

@@ -4,7 +4,6 @@ use serde::Serialize;
 use crate::error;
 use crate::utils;
 
-// FieldName is a type exclusively for GraphQL
 #[derive(Debug, Serialize, Clone, PartialEq, Eq, std::hash::Hash)]
 pub struct FieldName(
     pub Option<String>, // this is for any alias
@@ -137,8 +136,8 @@ impl<T> GQLArgType<T> {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct FieldInfo {
-    pub fields: Vec<FieldName>,
-    pub root_field_arguments: indexmap::IndexMap<String, GQLArgTypeWithOrderBy>,
+    fields: Vec<FieldName>,
+    root_field_arguments: indexmap::IndexMap<String, GQLArgTypeWithOrderBy>,
 }
 
 impl FieldInfo {
@@ -147,6 +146,14 @@ impl FieldInfo {
             fields,
             root_field_arguments: args,
         }
+    }
+
+    pub fn args(&self) -> &indexmap::IndexMap<String, GQLArgTypeWithOrderBy> {
+        &self.root_field_arguments
+    }
+
+    pub fn fields(&self) -> &[FieldName] {
+        &self.fields
     }
 }
 
@@ -257,8 +264,6 @@ pub enum OrderByOptions {
 }
 
 impl OrderByOptions {
-    // NOTE: this method has to be implemented by all types that would
-    //
     pub fn to_sql(&self) -> &str {
         match self {
             OrderByOptions::Asc => "ASC",

@@ -35,6 +35,8 @@ pub struct Metadata {
     pub tables: Tables,
 }
 
+pub type MetadataResult = Result<(), GQLRSError>;
+
 impl Metadata {
     pub fn new(source_name: String) -> Metadata {
         Metadata {
@@ -57,28 +59,28 @@ impl Metadata {
         false
     }
 
-    pub fn track_table(&mut self, qualified_table: &QualifiedTable) -> Result<(), GQLRSError> {
-        if self.is_table_tracked(qualified_table) {
-            return Err(GQLRSError {
-                kind: GQLRSErrorType::TableAlreadyTracked(qualified_table.to_string()),
-            });
+    pub fn track_table(&mut self, qualified_table: QualifiedTable) -> MetadataResult {
+        if self.is_table_tracked(&qualified_table) {
+            return Err(GQLRSError::new(GQLRSErrorType::TableAlreadyTracked(
+                qualified_table.to_string(),
+            )));
         }
 
         if let Some(tables) = self.tables.as_mut() {
             tables.push(QualifiedTable {
-                schema_name: qualified_table.schema_name.to_string(),
-                table_name: qualified_table.table_name.to_string(),
+                schema_name: qualified_table.schema_name,
+                table_name: qualified_table.table_name,
             });
         }
 
         Ok(())
     }
 
-    pub fn untrack_table(&mut self, qualified_table: &QualifiedTable) -> Result<(), GQLRSError> {
-        if !self.is_table_tracked(qualified_table) {
-            return Err(GQLRSError {
-                kind: GQLRSErrorType::TableNotFoundInMetadata(qualified_table.to_string()),
-            });
+    pub fn untrack_table(&mut self, qualified_table: QualifiedTable) -> MetadataResult {
+        if !self.is_table_tracked(&qualified_table) {
+            return Err(GQLRSError::new(GQLRSErrorType::TableNotFoundInMetadata(
+                qualified_table.to_string(),
+            )));
         }
 
         if let Some(tables) = self.tables.as_mut() {
@@ -89,6 +91,15 @@ impl Metadata {
         }
 
         Ok(())
+    }
+
+    pub fn get_tracked_tables(&self) -> Vec<QualifiedTable> {
+        if let Some(tables) = &self.tables {
+            return tables.clone();
+        }
+
+        Vec::new()
+        // self.tables.as_ref().unwrap_or_default()
     }
 }
 
