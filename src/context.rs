@@ -1,9 +1,11 @@
 use postgres::NoTls;
 use r2d2::Pool;
 use r2d2_postgres::PostgresConnectionManager;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+use crate::metadata::{load_metadata, Metadata};
+
+#[derive(Debug, PartialEq, Clone, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Status {
     Ok,
@@ -16,13 +18,15 @@ type PGPool = Pool<PostgresConnectionManager<NoTls>>;
 pub struct ServerCtx {
     conn_pool: PGPool,
     status: Status,
+    metadata: Metadata,
 }
 
 impl ServerCtx {
-    pub fn new(pg_pool: PGPool) -> ServerCtx {
+    pub fn new(pg_pool: PGPool, source_name: String) -> ServerCtx {
         ServerCtx {
             conn_pool: pg_pool,
             status: Status::Ok,
+            metadata: load_metadata(source_name),
         }
     }
 

@@ -24,7 +24,7 @@ pub async fn healthz_handler(
 pub enum MetadataMessage {
     TrackTable(QualifiedTable),
     UntrackTable(QualifiedTable),
-    // NOTE: args will only be `null` in this case
+    // NOTE: args will be `null` for `export_metadata`
     ExportMetadata,
 }
 
@@ -51,14 +51,10 @@ impl DataResponse {
     }
 }
 
-pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::HttpResponse {
-    let payload_to_str = std::str::from_utf8(&payload);
-    let parse_result = match payload_to_str {
-        Ok(r) => json::parse(r),
-        Err(_err) => Err(json::Error::FailedUtf8Parsing),
-    };
+pub async fn metadata_handler(srv_ctx: actix_web::web::Data<context::ServerCtx>,
+    payload: actix_web::web::Json<MetadataMessage>) -> actix_web::HttpResponse {
 
-    let body = parse_result.unwrap_or_else(|e| json::object! { "error" => e.to_string() });
+    let body = payload.0.;
 
     match serde_json::from_str::<'_, MetadataMessage>(&body.dump()) {
         Ok(b) => actix_web::HttpResponse::Ok()
@@ -69,7 +65,7 @@ pub async fn metadata_handler(payload: actix_web::web::Bytes) -> actix_web::Http
             ),
         Err(e) => actix_web::HttpResponse::build(actix_web::http::StatusCode::BAD_REQUEST).json(
             ErrorResponse {
-                error: e.to_string(),
+                error: String::from(e),
             },
         ),
     }

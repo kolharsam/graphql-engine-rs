@@ -27,26 +27,30 @@ impl std::fmt::Display for QualifiedTable {
     }
 }
 
+type Tables = Option<Vec<QualifiedTable>>;
+
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct Metadata {
     pub source_name: String,
-    pub tables: Vec<QualifiedTable>,
+    pub tables: Tables,
 }
 
 impl Metadata {
-    pub fn new(&self, source_name: String) -> Metadata {
+    pub fn new(source_name: String) -> Metadata {
         Metadata {
             source_name,
-            tables: Vec::new(),
+            tables: None,
         }
     }
 
     fn is_table_tracked(&self, qualified_table: &QualifiedTable) -> bool {
-        for table in self.tables.iter() {
-            if table.schema_name == qualified_table.schema_name
-                && table.table_name == qualified_table.table_name
-            {
-                return true;
+        if let Some(tables) = &self.tables {
+            for table in tables.iter() {
+                if table.schema_name == qualified_table.schema_name
+                    && table.table_name == qualified_table.table_name
+                {
+                    return true;
+                }
             }
         }
 
@@ -59,10 +63,14 @@ impl Metadata {
                 kind: GQLRSErrorType::TableAlreadyTracked(qualified_table.to_string()),
             });
         }
-        self.tables.push(QualifiedTable {
-            schema_name: qualified_table.schema_name.to_string(),
-            table_name: qualified_table.table_name.to_string(),
-        });
+
+        if let Some(tables) = self.tables.as_mut() {
+            tables.push(QualifiedTable {
+                schema_name: qualified_table.schema_name.to_string(),
+                table_name: qualified_table.table_name.to_string(),
+            });
+        }
+
         Ok(())
     }
 
@@ -72,7 +80,18 @@ impl Metadata {
                 kind: GQLRSErrorType::TableNotFoundInMetadata(qualified_table.to_string()),
             });
         }
-        // TODO: remove the table from the metadata
+
+        if let Some(tables) = self.tables.as_mut() {
+            tables.retain(|table| {
+                table.schema_name != qualified_table.schema_name
+                    && table.table_name != qualified_table.table_name
+            });
+        }
+
         Ok(())
     }
+}
+
+pub fn load_metadata(source_name: String) -> Metadata {
+    Metadata::new(source_name)
 }

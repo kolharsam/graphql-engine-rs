@@ -31,7 +31,7 @@ async fn main() -> std::io::Result<()> {
     let pg_connection_pool_res = db::get_pg_pool(&serve_options.connection_string);
 
     let server_ctx = match pg_connection_pool_res {
-        Ok(pg_pool) => context::ServerCtx::new(pg_pool),
+        Ok(pg_pool) => context::ServerCtx::new(pg_pool, serve_options.source_name),
         Err(e) => panic!("failed to initiate the connection pool with given connection string {}, see error: {:?}", serve_options.connection_string, e),
     };
 
@@ -43,9 +43,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(
                 actix_cors::Cors::default()
                     .allow_any_origin()
-                    .allowed_methods(vec!["GET", "POST"])
-                    .allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
-                    .allowed_header(http::header::CONTENT_TYPE)
+                    .allowed_methods(vec!["GET", "POST", "OPTIONS   "])
                     .max_age(3600),
             )
             .service(
@@ -121,7 +119,10 @@ mod tests {
     async fn test_graphql_handler() {
         let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
         let connection_string = std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str);
-        let server_ctx = ServerCtx::new(get_pg_pool(&connection_string).unwrap());
+        let server_ctx = ServerCtx::new(
+            get_pg_pool(&connection_string).unwrap(),
+            String::from("default"),
+        );
 
         let mut app =
             test::init_service(App::new().data(server_ctx.clone()).service(
