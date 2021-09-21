@@ -118,10 +118,7 @@ mod tests {
     async fn test_graphql_handler() {
         let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
         let connection_string = std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str);
-        let server_ctx = ServerCtx::new(
-            get_pg_pool(&connection_string).unwrap(),
-            "default",
-        );
+        let server_ctx = ServerCtx::new(get_pg_pool(&connection_string).unwrap(), "default");
 
         let mut app =
             test::init_service(App::new().data(server_ctx.clone()).service(

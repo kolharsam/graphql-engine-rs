@@ -315,7 +315,9 @@ pub async fn graphql_handler(
                     )
                 }
                 graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                    fetch_result_from_query_fields(sel_set, &mut pg_client, |table_name| server_ctx.check_for_table_in_metadata(table_name))
+                    fetch_result_from_query_fields(sel_set, &mut pg_client, |table_name| {
+                        server_ctx.check_for_table_in_metadata(table_name)
+                    })
                 }
             },
         },

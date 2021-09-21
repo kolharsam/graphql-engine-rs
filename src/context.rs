@@ -18,7 +18,7 @@ type PGPool = Pool<PostgresConnectionManager<NoTls>>;
 pub struct ServerCtx {
     conn_pool: PGPool,
     metadata: Metadata,
-    status: Status, 
+    status: Status,
 }
 
 impl ServerCtx {
