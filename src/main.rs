@@ -30,7 +30,7 @@ async fn main() -> std::io::Result<()> {
     let pg_connection_pool_res = db::get_pg_pool(&serve_options.connection_string);
 
     let server_ctx = match pg_connection_pool_res {
-        Ok(pg_pool) => context::ServerCtx::new(pg_pool, serve_options.source_name),
+        Ok(pg_pool) => context::ServerCtx::new(pg_pool, serve_options.source_name.as_str()),
         Err(e) => panic!("failed to initiate the connection pool with given connection string {}, see error: {:?}", serve_options.connection_string, e),
     };
 
@@ -120,7 +120,7 @@ mod tests {
         let connection_string = std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str);
         let server_ctx = ServerCtx::new(
             get_pg_pool(&connection_string).unwrap(),
-            String::from("default"),
+            "default",
         );
 
         let mut app =

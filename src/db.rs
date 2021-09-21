@@ -33,6 +33,7 @@ pub fn get_rows_gql_query(
     client: &mut Client,
     root_field: &FieldName,
     field_info: &FieldInfo,
+    fn_check_for_table_metadata: impl FnOnce(&str) -> bool,
 ) -> Result<Row, error::GQLRSError> {
     let mut query = String::new();
     let query_has_args = !field_info.args().is_empty();

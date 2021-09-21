@@ -118,6 +118,7 @@ fn fetch_result_from_query_fields<'a>(
     // move to using the selection set without having to duplicating code for
     // many of the patterns, like Query, Selection Set and eventually Subscriptions!
     pg_client: &mut Client,
+    fn_check_metadata: impl FnOnce(&str) -> bool,
 ) -> actix_web::HttpResponse {
     let mut fields_map: IndexMap<FieldName, FieldInfo> = IndexMap::new();
 
@@ -210,7 +211,12 @@ fn fetch_result_from_query_fields<'a>(
         let root_field_name = field_info.0;
         let fields_info_struct = field_info.1;
 
-        let query_res = db::get_rows_gql_query(pg_client, root_field_name, fields_info_struct);
+        let query_res = db::get_rows_gql_query(
+            pg_client,
+            root_field_name,
+            fields_info_struct,
+            fn_check_metadata,
+        );
         match query_res {
             Ok(db_res) => {
                 result_rows.push(db_res);
@@ -269,7 +275,8 @@ pub async fn graphql_handler(
     srv_ctx: actix_web::web::Data<context::ServerCtx>,
     payload: actix_web::web::Json<GraphQLRequest>,
 ) -> actix_web::HttpResponse {
-    let mut pg_client = srv_ctx.get_connection_pool().get().unwrap();
+    let server_ctx = srv_ctx.as_ref().to_owned();
+    let mut pg_client = server_ctx.get_connection_pool().get().unwrap();
 
     match graphql_parser::parse_query::<&str>(&payload.query) {
         // NOTE: We only execute the first query/mutation/subscription that
@@ -301,10 +308,14 @@ pub async fn graphql_handler(
                     })
                 }
                 graphql_parser::query::OperationDefinition::Query(qry) => {
-                    fetch_result_from_query_fields(&qry.selection_set, &mut pg_client)
+                    fetch_result_from_query_fields(
+                        &qry.selection_set,
+                        &mut pg_client,
+                        |table_name| server_ctx.check_for_table_in_metadata(table_name),
+                    )
                 }
                 graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                    fetch_result_from_query_fields(sel_set, &mut pg_client)
+                    fetch_result_from_query_fields(sel_set, &mut pg_client, |table_name| server_ctx.check_for_table_in_metadata(table_name))
                 }
             },
         },

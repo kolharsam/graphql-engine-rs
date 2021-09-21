@@ -18,11 +18,11 @@ type PGPool = Pool<PostgresConnectionManager<NoTls>>;
 pub struct ServerCtx {
     conn_pool: PGPool,
     metadata: Metadata,
-    status: Status,
+    status: Status, 
 }
 
 impl ServerCtx {
-    pub fn new(pg_pool: PGPool, source_name: String) -> ServerCtx {
+    pub fn new(pg_pool: PGPool, source_name: &str) -> ServerCtx {
         ServerCtx {
             conn_pool: pg_pool,
             status: Status::Ok,
@@ -58,7 +58,7 @@ impl ServerCtx {
         &self.metadata
     }
 
-    pub fn get_tracked_tables(&self) -> Vec<QualifiedTable> {
-        self.metadata.get_tracked_tables()
+    pub fn check_for_table_in_metadata(&self, table_name: &str) -> bool {
+        self.metadata.check_for_table_in_metadata(table_name)
     }
 }

@@ -27,32 +27,37 @@ impl std::fmt::Display for QualifiedTable {
     }
 }
 
-type Tables = Option<Vec<QualifiedTable>>;
+type Tables = Vec<QualifiedTable>;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
+#[derive(Debug, PartialEq, Serialize, Deserialize, Clone, Default)]
 pub struct Metadata {
+    #[serde(rename = "source")]
     pub source_name: String,
+    #[serde(default = "default_tables")]
     pub tables: Tables,
+}
+
+#[inline(always)]
+fn default_tables() -> Tables {
+    Vec::new()
 }
 
 pub type MetadataResult = Result<(), GQLRSError>;
 
 impl Metadata {
-    pub fn new(source_name: String) -> Metadata {
+    pub fn new(source_name: &str) -> Metadata {
         Metadata {
-            source_name,
-            tables: None,
+            source_name: String::from(source_name),
+            tables: Vec::new(),
         }
     }
 
     fn is_table_tracked(&self, qualified_table: &QualifiedTable) -> bool {
-        if let Some(tables) = &self.tables {
-            for table in tables.iter() {
-                if table.schema_name == qualified_table.schema_name
-                    && table.table_name == qualified_table.table_name
-                {
-                    return true;
-                }
+        for table in self.tables.iter() {
+            if table.schema_name == qualified_table.schema_name
+                && table.table_name == qualified_table.table_name
+            {
+                return true;
             }
         }
 
@@ -66,12 +71,10 @@ impl Metadata {
             )));
         }
 
-        if let Some(tables) = self.tables.as_mut() {
-            tables.push(QualifiedTable {
-                schema_name: qualified_table.schema_name,
-                table_name: qualified_table.table_name,
-            });
-        }
+        self.tables.push(QualifiedTable {
+            schema_name: qualified_table.schema_name,
+            table_name: qualified_table.table_name,
+        });
 
         Ok(())
     }
@@ -83,26 +86,19 @@ impl Metadata {
             )));
         }
 
-        if let Some(tables) = self.tables.as_mut() {
-            tables.retain(|table| {
-                table.schema_name != qualified_table.schema_name
-                    && table.table_name != qualified_table.table_name
-            });
-        }
+        self.tables.retain(|table| {
+            table.schema_name != qualified_table.schema_name
+                && table.table_name != qualified_table.table_name
+        });
 
         Ok(())
     }
 
-    pub fn get_tracked_tables(&self) -> Vec<QualifiedTable> {
-        if let Some(tables) = &self.tables {
-            return tables.clone();
-        }
-
-        Vec::new()
-        // self.tables.as_ref().unwrap_or_default()
+    pub fn check_for_table_in_metadata(&self, table_name: &str) -> bool {
+        false
     }
 }
 
-pub fn load_metadata(source_name: String) -> Metadata {
+pub fn load_metadata(source_name: &str) -> Metadata {
     Metadata::new(source_name)
 }
