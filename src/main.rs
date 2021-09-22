@@ -34,10 +34,11 @@ async fn main() -> std::io::Result<()> {
         Err(e) => panic!("failed to initiate the connection pool with given connection string {}, see error: {:?}", serve_options.connection_string, e),
     };
 
+    let app_state = context::AppState::new_state(server_ctx);
+
     actix_web::HttpServer::new(move || {
         actix_web::App::new()
-            // TODO: eventually, this would be the server ctx
-            .data(server_ctx.clone())
+            .app_data(app_state.clone())
             .wrap(actix_web::middleware::Logger::default())
             .wrap(
                 actix_cors::Cors::default()
@@ -49,14 +50,16 @@ async fn main() -> std::io::Result<()> {
                 actix_web::web::resource("/healthz")
                     .route(actix_web::web::get().to(server::healthz_handler)),
             )
-            // TODO: make the version "v1" as one `resource` and then add these routes there
             .service(
-                actix_web::web::resource("/v1/metadata")
-                    .route(actix_web::web::post().to(server::metadata_handler)),
-            )
-            .service(
-                actix_web::web::resource("/v1/graphql")
-                    .route(actix_web::web::post().to(server::graphql_handler)),
+                actix_web::web::scope("/v1")
+                    .route(
+                        "/metadata",
+                        actix_web::web::post().to(server::metadata_handler),
+                    )
+                    .route(
+                        "/graphql",
+                        actix_web::web::post().to(server::graphql_handler),
+                    ),
             )
             .default_service(actix_web::web::to(actix_web::HttpResponse::NotFound))
     })
@@ -69,7 +72,7 @@ async fn main() -> std::io::Result<()> {
 mod tests {
     use actix_web::{test, web, App};
 
-    use crate::context::ServerCtx;
+    use crate::context::{AppState, ServerCtx};
     use crate::db::get_pg_pool;
     use crate::server;
 
@@ -114,17 +117,47 @@ mod tests {
     //     assert_eq!(resp, "OK");
     // }
 
+    // NOTE/TODO/FIXME: This test might've become too tightly coupled at this point
+    // We need to make sure that we can test as many smaller aspects of this not just
+    // the overall picture. This can eventually become a huge pain point
     #[actix_rt::test]
-    async fn test_graphql_handler() {
+    async fn test_metadata_and_graphql_handlers() {
         let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
         let connection_string = std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str);
         let server_ctx = ServerCtx::new(get_pg_pool(&connection_string).unwrap(), "default");
+        let app_state = AppState::new_state(server_ctx);
 
-        let mut app =
-            test::init_service(App::new().data(server_ctx.clone()).service(
-                web::resource("/v1/graphql").route(web::post().to(server::graphql_handler)),
-            ))
-            .await;
+        let mut app = test::init_service(
+            App::new().app_data(app_state).service(
+                web::scope("/v1")
+                    .route("/metadata", web::post().to(server::metadata_handler))
+                    .route("/graphql", web::post().to(server::graphql_handler)),
+            ),
+        )
+        .await;
+
+        // Set up Metadata
+
+        let metadata_request_files =
+            std::fs::read_dir("test/metadata").expect("Failed to access the `test/metadata` dir.");
+
+        for metadata_request_file in metadata_request_files {
+            let metadata_request_filepath = metadata_request_file.unwrap().path();
+            let metadata_request_payload = std::fs::read_to_string(
+                metadata_request_filepath.clone(),
+            )
+            .expect(format!("failed to read file at {:?}", metadata_request_filepath).as_str());
+
+            let metadata_request = test::TestRequest::post()
+                .uri("/v1/metadata")
+                .header("Content-Type", "application/json")
+                .set_payload(metadata_request_payload)
+                .to_request();
+
+            let _test_response = test::read_response(&mut app, metadata_request).await;
+        }
+
+        // Test the graphql queries
 
         // TODO: automate this part too. we can fetch the dir. list
         // and based on that we could ensure that we don't have to
