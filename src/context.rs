@@ -2,8 +2,9 @@ use postgres::NoTls;
 use r2d2::Pool;
 use r2d2_postgres::PostgresConnectionManager;
 use serde::Serialize;
+use std::sync::Mutex;
 
-use crate::metadata::{load_metadata, Metadata, MetadataResult, QualifiedTable};
+use crate::metadata::{Metadata, MetadataResult, QualifiedTable};
 
 #[derive(Debug, PartialEq, Clone, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -26,7 +27,7 @@ impl ServerCtx {
         ServerCtx {
             conn_pool: pg_pool,
             status: Status::Ok,
-            metadata: load_metadata(source_name),
+            metadata: Metadata::new(source_name),
         }
     }
 
@@ -58,7 +59,15 @@ impl ServerCtx {
         &self.metadata
     }
 
-    pub fn check_for_table_in_metadata(&self, table_name: &str) -> bool {
-        self.metadata.check_for_table_in_metadata(table_name)
+    pub fn replace_metadata(&mut self, new_md: &Metadata) {
+        self.metadata.set_metadata(new_md)
+    }
+}
+
+pub struct AppState(pub Mutex<ServerCtx>);
+
+impl AppState {
+    pub fn new_state(server_ctx: ServerCtx) -> actix_web::web::Data<AppState> {
+        actix_web::web::Data::new(AppState(Mutex::new(server_ctx)))
     }
 }
