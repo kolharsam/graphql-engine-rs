@@ -9,7 +9,7 @@ use crate::gql_types::{
     field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
     to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
 };
-use crate::metadata::QualifiedTable;
+use crate::metadata::{Metadata, QualifiedTable};
 use crate::{context, db, error};
 
 pub async fn healthz_handler(
@@ -27,6 +27,7 @@ pub enum MetadataMessage {
     UntrackTable(QualifiedTable),
     // NOTE: args will be `null` for `export_metadata`
     ExportMetadata,
+    ImportMetadata(Metadata),
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -71,29 +72,34 @@ impl DataResponse {
 }
 
 pub async fn metadata_handler(
-    srv_ctx: actix_web::web::Data<context::ServerCtx>,
+    app_state: actix_web::web::Data<context::AppState>,
     payload: actix_web::web::Json<MetadataMessage>,
 ) -> actix_web::HttpResponse {
-    let mut server_ctx = srv_ctx.as_ref().to_owned();
+    let mut server_ctx = app_state.0.lock().unwrap();
+
     match payload.into_inner() {
         MetadataMessage::TrackTable(table) => {
-            match server_ctx.metadata_track_table(table.clone()) {
+            match (*server_ctx).metadata_track_table(table.clone()) {
                 Ok(_) => make_metadata_success_response(
-                    format!("Table {} is now being tracked!", table.to_string()).as_str(),
+                    format!("{} is now being tracked!", table.to_string()).as_str(),
                 ),
                 Err(err) => bad_request_response(format!("{}", err).as_str()),
             }
         }
         MetadataMessage::UntrackTable(table) => {
-            match server_ctx.metadata_untrack_table(table.clone()) {
+            match (*server_ctx).metadata_untrack_table(table.clone()) {
                 Ok(_) => make_metadata_success_response(
-                    format!("Table {} has now been un-tracked!", table.to_string()).as_str(),
+                    format!("{} has now been un-tracked!", table.to_string()).as_str(),
                 ),
                 Err(err) => bad_request_response(format!("{}", err).as_str()),
             }
         }
         MetadataMessage::ExportMetadata => {
-            actix_web::web::HttpResponse::Ok().json(server_ctx.get_metadata().clone())
+            actix_web::web::HttpResponse::Ok().json((*server_ctx).get_metadata())
+        }
+        MetadataMessage::ImportMetadata(md) => {
+            (*server_ctx).replace_metadata(&md);
+            make_metadata_success_response("Imported metadata successfully!")
         }
     }
 }
@@ -118,7 +124,7 @@ fn fetch_result_from_query_fields<'a>(
     // move to using the selection set without having to duplicating code for
     // many of the patterns, like Query, Selection Set and eventually Subscriptions!
     pg_client: &mut Client,
-    fn_check_metadata: impl FnOnce(&str) -> bool,
+    metadata: &Metadata,
 ) -> actix_web::HttpResponse {
     let mut fields_map: IndexMap<FieldName, FieldInfo> = IndexMap::new();
 
@@ -215,7 +221,7 @@ fn fetch_result_from_query_fields<'a>(
             pg_client,
             root_field_name,
             fields_info_struct,
-            fn_check_metadata,
+            metadata.to_owned(),
         );
         match query_res {
             Ok(db_res) => {
@@ -272,10 +278,10 @@ fn selection_set_fields_parser<'a>(
 // NOTE: Only GraphQL Queries and Selection Sets are supported.
 //       Mutations, Subscriptions will be supported eventually.
 pub async fn graphql_handler(
-    srv_ctx: actix_web::web::Data<context::ServerCtx>,
+    app_state: actix_web::web::Data<context::AppState>,
     payload: actix_web::web::Json<GraphQLRequest>,
 ) -> actix_web::HttpResponse {
-    let server_ctx = srv_ctx.as_ref().to_owned();
+    let server_ctx = app_state.0.lock().unwrap();
     let mut pg_client = server_ctx.get_connection_pool().get().unwrap();
 
     match graphql_parser::parse_query::<&str>(&payload.query) {
@@ -311,13 +317,15 @@ pub async fn graphql_handler(
                     fetch_result_from_query_fields(
                         &qry.selection_set,
                         &mut pg_client,
-                        |table_name| server_ctx.check_for_table_in_metadata(table_name),
+                        server_ctx.get_metadata(),
                     )
                 }
                 graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                    fetch_result_from_query_fields(sel_set, &mut pg_client, |table_name| {
-                        server_ctx.check_for_table_in_metadata(table_name)
-                    })
+                    fetch_result_from_query_fields(
+                        sel_set,
+                        &mut pg_client,
+                        server_ctx.get_metadata(),
+                    )
                 }
             },
         },
