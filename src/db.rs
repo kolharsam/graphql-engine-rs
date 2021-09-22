@@ -4,6 +4,7 @@ use r2d2_postgres::PostgresConnectionManager;
 
 use crate::error;
 use crate::gql_types::{FieldInfo, FieldName, GQLArgTypeWithOrderBy, SUPPORTED_INT_GQL_ARGUMENTS};
+use crate::metadata::Metadata;
 use crate::utils;
 
 pub fn get_pg_pool(
@@ -33,7 +34,7 @@ pub fn get_rows_gql_query(
     client: &mut Client,
     root_field: &FieldName,
     field_info: &FieldInfo,
-    fn_check_for_table_metadata: impl FnOnce(&str) -> bool,
+    current_metadata: Metadata,
 ) -> Result<Row, error::GQLRSError> {
     let mut query = String::new();
     let query_has_args = !field_info.args().is_empty();
@@ -72,8 +73,17 @@ pub fn get_rows_gql_query(
     query.pop();
     query.pop();
 
-    // FIXME/TODO: support other schemas based on the info that might be stored in metadata
-    query.push_str(format!(" FROM \"public\".\"{}\" ", root_field.name()).as_str());
+    let table_name = root_field.name();
+    match current_metadata.check_for_table_in_metadata(&table_name) {
+        Some(table) => {
+            query.push_str(format!(" FROM {} ", table.to_string()).as_str());
+        }
+        None => {
+            return Err(error::GQLRSError::new(
+                error::GQLRSErrorType::TableNotFoundInMetadata(root_field.name()),
+            ));
+        }
+    }
 
     if query_has_args {
         SUPPORTED_INT_GQL_ARGUMENTS.iter().for_each(|field_arg| {
