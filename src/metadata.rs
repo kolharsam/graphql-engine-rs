@@ -11,6 +11,15 @@ pub struct QualifiedTable {
     pub table_name: String,
 }
 
+impl QualifiedTable {
+    pub fn new(schema: &str, table: &str) -> Self {
+        QualifiedTable {
+            schema_name: String::from(schema),
+            table_name: String::from(table),
+        }
+    }
+}
+
 #[inline(always)]
 fn public_schema() -> String {
     String::from("public")
