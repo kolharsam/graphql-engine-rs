@@ -53,10 +53,8 @@ impl Metadata {
     }
 
     fn is_table_tracked(&self, qualified_table: &QualifiedTable) -> bool {
-        for table in self.tables.iter() {
-            if table.schema_name == qualified_table.schema_name
-                && table.table_name == qualified_table.table_name
-            {
+        for table in &self.tables {
+            if table == qualified_table {
                 return true;
             }
         }
@@ -71,10 +69,7 @@ impl Metadata {
             )));
         }
 
-        self.tables.push(QualifiedTable {
-            schema_name: qualified_table.schema_name,
-            table_name: qualified_table.table_name,
-        });
+        self.tables.push(qualified_table);
 
         Ok(())
     }
@@ -86,19 +81,24 @@ impl Metadata {
             )));
         }
 
-        self.tables.retain(|table| {
-            table.schema_name != qualified_table.schema_name
-                && table.table_name != qualified_table.table_name
-        });
+        self.tables.retain(|table| table != &qualified_table);
 
         Ok(())
     }
 
-    pub fn check_for_table_in_metadata(&self, table_name: &str) -> bool {
-        false
-    }
-}
+    pub fn check_for_table_in_metadata(&self, table_name: &str) -> Option<QualifiedTable> {
+        for table in &self.tables {
+            if table.table_name == *table_name {
+                return Some(table.clone());
+            }
+        }
 
-pub fn load_metadata(source_name: &str) -> Metadata {
-    Metadata::new(source_name)
+        None
+    }
+
+    pub fn set_metadata(&mut self, new_md: &Metadata) {
+        // TODO?: we could perhaps do something better than this?
+        self.source_name = new_md.source_name.clone();
+        self.tables = new_md.tables.clone();
+    }
 }
