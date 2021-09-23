@@ -57,6 +57,7 @@ impl Actor for WebSocketSession {
 
     fn started(&mut self, ctx: &mut Self::Context) {
         self.send_heartbeat(ctx);
+        // let pro = ctx.
 
         let session_addr = ctx.address();
         self.server_addr
@@ -137,6 +138,7 @@ pub async fn ws_index(
     stream: web::Payload,
     server_addr: web::Data<Addr<WebSocketServer>>,
 ) -> Result<HttpResponse, Error> {
+    // let ws_protocol_header = req.headers().get("")
     let res = ws::start(
         WebSocketSession::new(server_addr.get_ref().clone()),
         &req,

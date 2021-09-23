@@ -22,7 +22,7 @@ async fn main() -> std::io::Result<()> {
 
     debug!("GraphQL-Engine-RS is being initialised...");
 
-    let server = websocket::WebSocketServer::new().start();
+    let ws_server = websocket::WebSocketServer::new().start();
     let serve_options = options::parsed_options();
     if serve_options.source_name == "default" {
         warn!("No source-name was provided, setting \"default\" as source-name.");
@@ -42,6 +42,7 @@ async fn main() -> std::io::Result<()> {
         actix_web::App::new()
             // TODO: eventually, this would be the server ctx
             .data(server_ctx.clone())
+            .data(ws_server.clone())
             .wrap(actix_web::middleware::Logger::default())
             .wrap(
                 actix_cors::Cors::default()
