@@ -4,6 +4,7 @@ use log::warn;
 use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::gql_types::{
     field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
@@ -22,7 +23,7 @@ pub async fn healthz_handler(
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(tag = "type", content = "args", rename_all = "snake_case")]
-pub enum MetadataMessage {
+pub enum MetadataRequestBody {
     TrackTable(QualifiedTable),
     UntrackTable(QualifiedTable),
     // NOTE: args will be `null` for `export_metadata`
@@ -31,27 +32,30 @@ pub enum MetadataMessage {
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct MetadataSuccess {
-    success: bool,
-    message: String,
+pub enum MetadataResponse<T = Metadata> {
+    Success(String),
+    Data(T),
+    Error(error::GQLRSError),
 }
 
-fn make_metadata_success_response(message: &str) -> actix_web::HttpResponse {
-    actix_web::web::HttpResponse::Ok().json(MetadataSuccess {
-        success: true,
-        message: String::from(message),
-    })
-}
+impl<T> actix_web::Responder for MetadataResponse<T>
+where
+    T: Serialize,
+{
+    type Error = actix_web::Error;
+    type Future = actix_web::HttpResponse;
 
-fn make_metadata_error_response(status: StatusCode, err_message: &str) -> actix_web::HttpResponse {
-    actix_web::web::HttpResponse::build(status).json(ErrorResponse {
-        error: String::from(err_message),
-    })
-}
-
-fn bad_request_response(err_message: &str) -> actix_web::HttpResponse {
-    // NOTE: probably should be making use of currying here
-    make_metadata_error_response(StatusCode::BAD_REQUEST, err_message)
+    fn respond_to(self, _: &actix_web::HttpRequest) -> Self::Future {
+        match self {
+            MetadataResponse::Error(err_resp) => {
+                actix_web::HttpResponse::build(StatusCode::BAD_REQUEST).json(err_resp)
+            }
+            MetadataResponse::Success(msg) => {
+                actix_web::HttpResponse::Ok().json(json!({"success": true, "message": msg}))
+            }
+            MetadataResponse::Data(body) => actix_web::web::HttpResponse::Ok().json(body),
+        }
+    }
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -73,33 +77,35 @@ impl DataResponse {
 
 pub async fn metadata_handler(
     app_state: actix_web::web::Data<context::AppState>,
-    payload: actix_web::web::Json<MetadataMessage>,
-) -> actix_web::HttpResponse {
+    payload: actix_web::web::Json<MetadataRequestBody>,
+) -> impl actix_web::Responder {
     let mut server_ctx = app_state.0.lock().unwrap();
 
     match payload.into_inner() {
-        MetadataMessage::TrackTable(table) => {
+        MetadataRequestBody::TrackTable(table) => {
             match (*server_ctx).metadata_track_table(table.clone()) {
-                Ok(_) => make_metadata_success_response(
-                    format!("{} is now being tracked!", table.to_string()).as_str(),
-                ),
-                Err(err) => bad_request_response(format!("{}", err).as_str()),
+                Ok(_) => MetadataResponse::Success(format!(
+                    "{} is now being tracked!",
+                    table.to_string()
+                )),
+                Err(err) => MetadataResponse::Error(err),
             }
         }
-        MetadataMessage::UntrackTable(table) => {
+        MetadataRequestBody::UntrackTable(table) => {
             match (*server_ctx).metadata_untrack_table(table.clone()) {
-                Ok(_) => make_metadata_success_response(
-                    format!("{} has now been un-tracked!", table.to_string()).as_str(),
-                ),
-                Err(err) => bad_request_response(format!("{}", err).as_str()),
+                Ok(_) => MetadataResponse::Success(format!(
+                    "{} has now been un-tracked!",
+                    table.to_string()
+                )),
+                Err(err) => MetadataResponse::Error(err),
             }
         }
-        MetadataMessage::ExportMetadata => {
-            actix_web::web::HttpResponse::Ok().json((*server_ctx).get_metadata())
+        MetadataRequestBody::ExportMetadata => {
+            MetadataResponse::Data((*server_ctx).get_metadata().clone())
         }
-        MetadataMessage::ImportMetadata(md) => {
+        MetadataRequestBody::ImportMetadata(md) => {
             (*server_ctx).replace_metadata(&md);
-            make_metadata_success_response("Imported metadata successfully!")
+            MetadataResponse::Success("Imported metadata successfully!".to_string())
         }
     }
 }
