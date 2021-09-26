@@ -3,8 +3,8 @@ use r2d2::{Error, Pool};
 use r2d2_postgres::PostgresConnectionManager;
 
 use crate::error;
-use crate::types;
-use crate::types::GQLArgTypeWithOrderBy;
+use crate::gql_types::{FieldInfo, FieldName, GQLArgTypeWithOrderBy, SUPPORTED_INT_GQL_ARGUMENTS};
+use crate::metadata::Metadata;
 use crate::utils;
 
 pub fn get_pg_pool(
@@ -32,11 +32,12 @@ fn add_int_arg_to_query(
 // This is a helper to construct the SQL query to fetch results from the database
 pub fn get_rows_gql_query(
     client: &mut Client,
-    root_field: &types::FieldName,
-    field_info: &types::FieldInfo,
+    root_field: &FieldName,
+    field_info: &FieldInfo,
+    current_metadata: Metadata,
 ) -> Result<Row, error::GQLRSError> {
     let mut query = String::new();
-    let query_has_args = !field_info.root_field_arguments.is_empty();
+    let query_has_args = !field_info.args().is_empty();
 
     // NOTE: since we're using json_agg here, the DB has to be of v9 or over
     query.push_str(
@@ -48,8 +49,8 @@ pub fn get_rows_gql_query(
     );
 
     // add the distinct on clause (if necessary)
-    if query_has_args && field_info.root_field_arguments.contains_key("distinct_on") {
-        let distinct_col = field_info.root_field_arguments.get("distinct_on");
+    if query_has_args && field_info.args().contains_key("distinct_on") {
+        let distinct_col = field_info.args().get("distinct_on");
         match distinct_col {
             Some(val) => {
                 query.push_str(format!("DISTINCT ON({}) ", val.get_string()).as_str());
@@ -64,7 +65,7 @@ pub fn get_rows_gql_query(
         }
     }
 
-    for field_name in field_info.fields.iter() {
+    for field_name in field_info.fields().iter() {
         query.push_str(format!("{}, ", field_name.to_sql()).as_str());
     }
 
@@ -72,29 +73,36 @@ pub fn get_rows_gql_query(
     query.pop();
     query.pop();
 
-    // FIXME/TODO: support other schemas based on the info that might be stored in metadata
-    query.push_str(format!(" FROM \"public\".\"{}\" ", root_field.name()).as_str());
+    let table_name = root_field.name();
+    match current_metadata.check_for_table_in_metadata(&table_name) {
+        Some(table) => {
+            query.push_str(format!(" FROM {} ", table.to_string()).as_str());
+        }
+        None => {
+            return Err(error::GQLRSError::new(
+                error::GQLRSErrorType::TableNotFoundInMetadata(root_field.name()),
+            ));
+        }
+    }
 
     if query_has_args {
-        types::SUPPORTED_INT_GQL_ARGUMENTS
-            .iter()
-            .for_each(|field_arg| {
-                let arg_val = field_info.root_field_arguments.get(*field_arg);
-                match *field_arg {
-                    "limit" => {
-                        add_int_arg_to_query(&mut query, "limit", arg_val);
-                    }
-                    "offset" => {
-                        add_int_arg_to_query(&mut query, "offset", arg_val);
-                    }
-                    _ => (),
+        SUPPORTED_INT_GQL_ARGUMENTS.iter().for_each(|field_arg| {
+            let arg_val = field_info.args().get(*field_arg);
+            match *field_arg {
+                "limit" => {
+                    add_int_arg_to_query(&mut query, "limit", arg_val);
                 }
-            });
+                "offset" => {
+                    add_int_arg_to_query(&mut query, "offset", arg_val);
+                }
+                _ => (),
+            }
+        });
     }
 
     // See if there's a requirement of the `order by` clause
-    if query_has_args && field_info.root_field_arguments.contains_key("order_by") {
-        let order_by_cols = field_info.root_field_arguments.get("order_by");
+    if query_has_args && field_info.args().contains_key("order_by") {
+        let order_by_cols = field_info.args().get("order_by");
         match order_by_cols {
             Some(val) => {
                 query.push_str(" ORDER BY ");

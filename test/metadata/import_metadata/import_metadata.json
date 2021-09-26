@@ -1,0 +1,15 @@
+{
+  "type": "import_metadata",
+  "args": {
+    "source": "default2",
+    "tables": [
+      {
+        "table": "authors"
+      },
+      {
+        "table": "users",
+        "schema": "new_schema"
+      }
+    ]
+  }
+}

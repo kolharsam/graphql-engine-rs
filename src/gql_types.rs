@@ -1,89 +1,9 @@
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::error;
 use crate::utils;
 
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-pub struct QualifiedTable {
-    #[serde(rename = "schema", default = "to_public_schema")]
-    pub schema_name: String,
-    #[serde(rename = "table")]
-    pub table_name: String,
-}
-
-fn to_public_schema() -> String {
-    "public".to_string()
-}
-
-impl std::fmt::Display for QualifiedTable {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}.{}",
-            utils::dquote(&self.schema_name.clone()),
-            utils::dquote(&self.table_name.clone())
-        )
-    }
-}
-
-#[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
-pub struct Metadata {
-    pub source_name: String,
-    pub tables: Vec<QualifiedTable>,
-}
-
-impl Metadata {
-    pub fn new(&self, source_name: String) -> Metadata {
-        Metadata {
-            source_name,
-            tables: Vec::new(),
-        }
-    }
-
-    fn is_table_tracked(&self, qualified_table: &QualifiedTable) -> bool {
-        for table in self.tables.iter() {
-            if table.schema_name == qualified_table.schema_name
-                && table.table_name == qualified_table.table_name
-            {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    pub fn track_table(
-        &mut self,
-        qualified_table: &QualifiedTable,
-    ) -> Result<(), error::GQLRSError> {
-        if self.is_table_tracked(qualified_table) {
-            return Err(error::GQLRSError {
-                kind: error::GQLRSErrorType::TableAlreadyTracked(qualified_table.to_string()),
-            });
-        }
-        self.tables.push(QualifiedTable {
-            schema_name: qualified_table.schema_name.to_string(),
-            table_name: qualified_table.table_name.to_string(),
-        });
-        Ok(())
-    }
-
-    pub fn untrack_table(
-        &mut self,
-        qualified_table: &QualifiedTable,
-    ) -> Result<(), error::GQLRSError> {
-        if !self.is_table_tracked(qualified_table) {
-            return Err(error::GQLRSError {
-                kind: error::GQLRSErrorType::TableNotFoundInMetadata(qualified_table.to_string()),
-            });
-        }
-        // TODO: remove the table from the metadata
-        Ok(())
-    }
-}
-
-// FieldName is a type exclusively for GraphQL
 #[derive(Debug, Serialize, Clone, PartialEq, Eq, std::hash::Hash)]
 pub struct FieldName(
     pub Option<String>, // this is for any alias
@@ -216,8 +136,8 @@ impl<T> GQLArgType<T> {
 
 #[derive(Serialize, Clone, Debug)]
 pub struct FieldInfo {
-    pub fields: Vec<FieldName>,
-    pub root_field_arguments: indexmap::IndexMap<String, GQLArgTypeWithOrderBy>,
+    fields: Vec<FieldName>,
+    root_field_arguments: indexmap::IndexMap<String, GQLArgTypeWithOrderBy>,
 }
 
 impl FieldInfo {
@@ -226,6 +146,14 @@ impl FieldInfo {
             fields,
             root_field_arguments: args,
         }
+    }
+
+    pub fn args(&self) -> &indexmap::IndexMap<String, GQLArgTypeWithOrderBy> {
+        &self.root_field_arguments
+    }
+
+    pub fn fields(&self) -> &[FieldName] {
+        &self.fields
     }
 }
 
@@ -336,8 +264,6 @@ pub enum OrderByOptions {
 }
 
 impl OrderByOptions {
-    // NOTE: this method has to be implemented by all types that would
-    //
     pub fn to_sql(&self) -> &str {
         match self {
             OrderByOptions::Asc => "ASC",
