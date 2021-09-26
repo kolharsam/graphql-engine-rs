@@ -1,0 +1,7 @@
+{
+  "type": "untrack_table",
+  "args": {
+    "schema": "new_schema",
+    "table": "users"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "type": "untrack_table",
+  "args": {
+    "table": "authors"
+  }
+}

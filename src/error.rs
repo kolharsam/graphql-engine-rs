@@ -1,6 +1,7 @@
+use serde::Serialize;
 use thiserror::Error;
 
-#[derive(Error, Debug, serde::Serialize)]
+#[derive(Error, Debug, Serialize, Clone)]
 pub enum GQLRSErrorType {
     #[error("ERROR: `{0}`")]
     GenericError(String),
@@ -14,8 +15,8 @@ pub enum GQLRSErrorType {
     InvalidInput(String),
 }
 
-#[derive(Error, Debug, serde::Serialize)]
-#[error("Error {{ kind: `{kind}` }}")]
+#[derive(Error, Debug, Serialize, Clone)]
+#[error("Error {{ error: `{kind}` }}")]
 pub struct GQLRSError {
     pub kind: GQLRSErrorType,
 }
