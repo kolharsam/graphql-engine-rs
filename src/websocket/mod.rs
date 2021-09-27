@@ -56,17 +56,20 @@ impl WebSocketSession {
     }
 
     fn pre_start(&self, ctx: &mut <Self as Actor>::Context) {
-        let ws_protocol = self.req.headers().get("Sec-WebSocket-Protocol");
-        let has_supported_protocol = ws_protocol.map(|header| {
-            header
-                .to_str()
-                .map(|str| str.contains(GRAPHQL_TRANSPORT_WS_PROTOCOL))
-                .unwrap_or(false)
-        });
-        if has_supported_protocol == Some(false) {
-            ctx.close(GQLCloseCode::SubprotocolNotAcceptable.into());
-            ctx.stop();
-        }
+        self.req
+            .headers()
+            .get("Sec-WebSocket-Protocol")
+            .map(|sub_protocol| {
+                sub_protocol
+                    .to_str()
+                    .map(|str| str != GRAPHQL_TRANSPORT_WS_PROTOCOL)
+            })
+            .map(|not_supported| {
+                not_supported.unwrap_or(true).then(|| {
+                    ctx.close(GQLCloseCode::SubprotocolNotAcceptable.into());
+                    ctx.stop();
+                })
+            });
     }
 }
 
