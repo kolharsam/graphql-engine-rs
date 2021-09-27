@@ -19,6 +19,8 @@ use actix::{
 pub use self::server::*;
 use self::types::{ClientMessage, ClientPayload, Connect, Disconnect, GQLCloseCode, Message};
 
+pub const GRAPHQL_TRANSPORT_WS_PROTOCOL: &str = "graphql-transport-ws";
+
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(30);
 // For waiting for connectionInit message
@@ -28,14 +30,16 @@ pub struct WebSocketSession {
     id: String,
     hb: Instant,
     server_addr: Addr<WebSocketServer>,
+    req: HttpRequest,
 }
 
 impl WebSocketSession {
-    fn new(server_addr: Addr<WebSocketServer>) -> Self {
+    fn new(server_addr: Addr<WebSocketServer>, req: &HttpRequest) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             hb: Instant::now(),
             server_addr,
+            req: req.clone(),
         }
     }
 
@@ -50,14 +54,28 @@ impl WebSocketSession {
             ctx.ping(b"");
         });
     }
+
+    fn pre_start(&self, ctx: &mut <Self as Actor>::Context) {
+        let ws_protocol = self.req.headers().get("Sec-WebSocket-Protocol");
+        let has_supported_protocol = ws_protocol.map(|header| {
+            header
+                .to_str()
+                .map(|str| str.contains(GRAPHQL_TRANSPORT_WS_PROTOCOL))
+                .unwrap_or(false)
+        });
+        if has_supported_protocol == Some(false) {
+            ctx.close(GQLCloseCode::SubprotocolNotAcceptable.into());
+            ctx.stop();
+        }
+    }
 }
 
 impl Actor for WebSocketSession {
     type Context = ws::WebsocketContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
+        self.pre_start(ctx);
         self.send_heartbeat(ctx);
-        // let pro = ctx.
 
         let session_addr = ctx.address();
         self.server_addr
@@ -138,9 +156,8 @@ pub async fn ws_index(
     stream: web::Payload,
     server_addr: web::Data<Addr<WebSocketServer>>,
 ) -> Result<HttpResponse, Error> {
-    // let ws_protocol_header = req.headers().get("")
     let res = ws::start(
-        WebSocketSession::new(server_addr.get_ref().clone()),
+        WebSocketSession::new(server_addr.get_ref().clone(), &req),
         &req,
         stream,
     )?;

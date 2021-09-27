@@ -6,15 +6,9 @@ use std::{collections::HashMap, str::FromStr};
 
 use crate::error::GQLRSError;
 
-pub const GRAPHQL_TRANSPORT_WS_PROTOCOL: &str = "graphql-transport-ws";
-
 #[derive(ActixMessage)]
 #[rtype(result = "()")]
 pub struct Message(pub String);
-
-pub trait ToMessage {
-    fn to_message(&self) -> Result<Message, serde_json::Error>;
-}
 
 #[derive(ActixMessage)]
 #[rtype(result = "()")]

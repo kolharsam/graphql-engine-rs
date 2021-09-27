@@ -63,10 +63,6 @@ impl Handler<Connect> for WebSocketServer {
 
     fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) {
         self.sessions.insert(msg.id.clone(), msg.addr);
-        // if self.timings.contains_key(&msg.id) {
-        //     ctx.close()
-        // }
-        println!("sessions: \n{:?}", self.sessions);
     }
 }
 
@@ -75,7 +71,6 @@ impl Handler<Disconnect> for WebSocketServer {
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
         self.sessions.remove(&msg.id);
-        println!("sessions: \n{:?}", self.sessions);
     }
 }
 
