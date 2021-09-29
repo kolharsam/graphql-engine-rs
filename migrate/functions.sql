@@ -7,3 +7,18 @@ AS $function$
         RETURN NULL;
     END;
 $function$
+
+CREATE OR REPLACE FUNCTION public.create_trigger (id TEXT, rel_name TEXT)
+	RETURNS void
+	AS $$
+BEGIN
+	EXECUTE format('CREATE TRIGGER %I
+ 	AFTER INSERT
+ 	OR UPDATE
+ 	OR DELETE
+ 	OR TRUNCATE ON %I
+ 	FOR EACH STATEMENT
+ 	EXECUTE FUNCTION public.notify_changes (%I);', 'ws_trigger_for_' || id, rel_name, id);
+END;
+$$
+LANGUAGE plpgsql;

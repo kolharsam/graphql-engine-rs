@@ -19,13 +19,7 @@ impl WebSocketServer {
 
     fn create_trigger_sql(id: &str, table: &str) -> String {
         let trigger_id = id.replace("-", "");
-        format!(
-            r#"CREATE TRIGGER ws_trigger_for_{0}
-           AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON {1}
-           FOR EACH STATEMENT
-           EXECUTE FUNCTION public.notify_changes('{0}');"#,
-            trigger_id, table
-        )
+        format!("public.create_trigger({}, {});", trigger_id, table)
     }
 
     fn drop_trigger_sql(id: &str, table: &str) -> String {
