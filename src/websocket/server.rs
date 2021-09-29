@@ -1,18 +1,36 @@
-use super::types::{ClientMessage, ClientPayload, Connect, Disconnect, Message, ServerMessage};
+use super::types::{
+    ClientMessage, ClientPayload, Connect, Disconnect, Message, MessagePayload, ServerMessage,
+};
 use actix::{Actor, Context, Handler, Recipient};
+use indexmap::IndexMap;
 use log::error;
 use serde_json::error::Result as SerdeResult;
-use std::{collections::HashMap, time::Instant};
 
 pub struct WebSocketServer {
-    sessions: HashMap<String, Recipient<Message>>,
+    sessions: IndexMap<String, Recipient<Message>>,
 }
 
 impl WebSocketServer {
     pub fn new() -> Self {
         Self {
-            sessions: HashMap::new(),
+            sessions: IndexMap::new(),
         }
+    }
+
+    fn create_trigger_sql(id: &str, table: &str) -> String {
+        let trigger_id = id.replace("-", "");
+        format!(
+            r#"CREATE TRIGGER ws_trigger_for_{0}
+           AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE ON {1}
+           FOR EACH STATEMENT
+           EXECUTE FUNCTION public.notify_changes('{0}');"#,
+            trigger_id, table
+        )
+    }
+
+    fn drop_trigger_sql(id: &str, table: &str) -> String {
+        let trigger_id = id.replace("-", "");
+        format!("DROP TRIGGER IF EXISTS {} ON {}", trigger_id, table)
     }
 
     fn send_message(&self, data: SerdeResult<String>) {
@@ -48,6 +66,9 @@ impl WebSocketServer {
             ServerMessage::ConnectionAck { payload: None },
         );
     }
+    fn handle_subscription(&self, payload: &MessagePayload, id: &str) {
+        println!("Message from client: {:?}", payload)
+    }
 
     fn handle_pong(&self, client_payload: ClientPayload) {
         self.send_to_client(&client_payload.id, ServerMessage::Ping { payload: None })
@@ -61,7 +82,7 @@ impl WebSocketServer {
 impl Handler<Connect> for WebSocketServer {
     type Result = ();
 
-    fn handle(&mut self, msg: Connect, ctx: &mut Context<Self>) {
+    fn handle(&mut self, msg: Connect, _ctx: &mut Context<Self>) {
         self.sessions.insert(msg.id.clone(), msg.addr);
     }
 }
@@ -91,9 +112,7 @@ impl Handler<ClientPayload> for WebSocketServer {
                 self.handle_connection_init(client_payload)
             }
             ClientMessage::Complete { id } => println!("Message from client: {:?}", id),
-            ClientMessage::Subscribe { payload: _, id: _ } => {
-                println!("Message from client: {:?}", &client_payload.message)
-            }
+            ClientMessage::Subscribe { payload, id } => self.handle_subscription(payload, id),
             ClientMessage::Ping { payload: _ } => self.handle_ping(client_payload),
             ClientMessage::Pong { payload: _ } => self.handle_pong(client_payload),
             ClientMessage::Invalid(text) => error!("Message from client: {:?}", text),
