@@ -56,8 +56,8 @@ impl actix_web::Responder for GraphQLResponse {
 
     fn respond_to(self, _: &HttpRequest) -> Self::Future {
         match self {
-            GraphQLResponse::Data(data) => actix_web::HttpResponse::Ok().json(data),
-            GraphQLResponse::Error(error) => actix_web::HttpResponse::Ok().json(error),
+            GraphQLResponse::Data(data) => HttpResponse::Ok().json(data),
+            GraphQLResponse::Error(error) => HttpResponse::Ok().json(error),
         }
     }
 }

@@ -12,12 +12,12 @@ pub fn to_camel_case(s: &str) -> String {
     s.to_case(Case::Camel)
 }
 
-// CAUTION: this method is unsafe!
+/// CAUTION: this method is unsafe!
 pub fn string_to_static_str(s: String) -> &'static str {
     Box::leak(s.into_boxed_str())
 }
 
-// To fetch the number of occurrences of an element in a list
+/// To fetch the number of occurrences of an element in a list
 pub fn get_frequency<T>(list: &[T], elem: &T) -> i32
 where
     T: PartialEq + Eq,
@@ -31,8 +31,9 @@ where
     count
 }
 
-// NOTE: Here the `either` in the function name is the name of the Haskell function `either`
-// This is what the Haskell function `either` does: either :: (a -> c) -> (b -> c) -> Either a b -> c
+/// Here the `either` in the function name is the name of the Haskell function `either`
+/// This is what the Haskell function `either` does:
+/// either :: (a -> c) -> (b -> c) -> Either a b -> c
 pub fn result_to_either<A, B, T, F, G>(err_fn: F, ok_fn: G, result: Result<A, B>) -> T
 where
     F: Fn(B) -> T,
