@@ -6,8 +6,10 @@ use crate::utils;
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq, std::hash::Hash)]
 pub struct FieldName(
-    pub Option<String>, // this is for any alias
-    pub String,         // this is the actual field name
+    pub Option<String>,
+    //^ this is for any alias
+    pub String,
+    //^ this is the actual field name
 );
 
 impl FieldName {
@@ -70,17 +72,19 @@ fn field_name_to_sql_with_alias() {
     );
 }
 
-// NOTE: GQLArgs is a simplified version of the
-// AST's representation of arguments. Using
-// such a structure only because it's easier
-// to do operations. The AST is much more
-// sophisticated and hence can become cumbersome
+/* NOTE: GQLArgs is a simplified version of the
+    AST's representation of arguments. Using
+    such a structure only because it's easier
+    to do operations. The AST is much more
+    sophisticated and hence can become cumbersome
+
+  NOTE: We can keep increasing the types that this
+    struct uses to ensure that we are writing type safe code.
+    Certainly, there's no element of elegance to it. But,
+    nevertheless should help the developer to write much simpler
+    functions for the processing of the AST and SQL code
+*/
 #[derive(Serialize, Clone, Debug)]
-// NOTE: We can keep increasing the types that this
-// struct uses to ensure that we are writing type safe code.
-// Certainly, there's no element of elegance to it. But,
-// nevertheless should help the developer to write much simpler
-// functions for the processing of the AST and SQL code
 pub enum GQLArgType<T> {
     // NOTE: supported for [distinct_on]
     String(String),

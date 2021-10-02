@@ -1,4 +1,4 @@
-use actix_web::http::StatusCode;
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use indexmap::IndexMap;
 use log::warn;
 use postgres::types::Json;
@@ -10,102 +10,54 @@ use crate::gql_types::{
     field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
     to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
 };
-use crate::metadata::{Metadata, QualifiedTable};
-use crate::{context, db, error};
+use crate::metadata::Metadata;
+use crate::{context::AppState, db, utils::map_either};
 
-pub async fn healthz_handler(
-    srv_ctx: actix_web::web::Data<context::ServerCtx>,
-    _req: actix_web::HttpRequest,
-) -> actix_web::HttpResponse {
-    actix_web::web::HttpResponse::Ok().json(srv_ctx.get_status_json())
-    // TODO: add something for "ERROR"
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(tag = "type", content = "args", rename_all = "snake_case")]
-pub enum MetadataRequestBody {
-    TrackTable(QualifiedTable),
-    UntrackTable(QualifiedTable),
-    // NOTE: args will be `null` for `export_metadata`
-    ExportMetadata,
-    ImportMetadata(Metadata),
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub enum MetadataResponse<T = Metadata> {
-    Success(String),
-    Data(T),
-    Error(error::GQLRSError),
-}
-
-impl<T> actix_web::Responder for MetadataResponse<T>
+fn get_data_json<T>(data_arg: T) -> serde_json::Value
 where
     T: Serialize,
 {
+    json!({ "data": data_arg })
+}
+
+fn get_err_json<T>(err_arg: T) -> serde_json::Value
+where
+    T: Serialize,
+{
+    json!({ "error": err_arg })
+}
+
+#[derive(Serialize, Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum GraphQLResponse {
+    Data(serde_json::Value),
+    Error(serde_json::Value),
+}
+
+impl GraphQLResponse {
+    pub fn data<T>(arg: T) -> Self
+    where
+        T: Serialize,
+    {
+        GraphQLResponse::Data(get_data_json(arg))
+    }
+
+    pub fn error<T>(arg: T) -> Self
+    where
+        T: Serialize,
+    {
+        GraphQLResponse::Error(get_err_json(arg))
+    }
+}
+
+impl actix_web::Responder for GraphQLResponse {
     type Error = actix_web::Error;
-    type Future = actix_web::HttpResponse;
+    type Future = HttpResponse;
 
-    fn respond_to(self, _: &actix_web::HttpRequest) -> Self::Future {
+    fn respond_to(self, _: &HttpRequest) -> Self::Future {
         match self {
-            MetadataResponse::Error(err_resp) => {
-                actix_web::HttpResponse::build(StatusCode::BAD_REQUEST).json(err_resp)
-            }
-            MetadataResponse::Success(msg) => {
-                actix_web::HttpResponse::Ok().json(json!({"success": true, "message": msg}))
-            }
-            MetadataResponse::Data(body) => actix_web::web::HttpResponse::Ok().json(body),
-        }
-    }
-}
-
-#[derive(Serialize, Debug, Clone)]
-pub struct ErrorResponse {
-    error: String,
-}
-
-// NOTE: this should be used for sending the API response
-#[derive(Serialize, Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct DataResponse {
-    data: IndexMap<String, serde_json::Value>,
-}
-
-impl DataResponse {
-    pub fn new(data: IndexMap<String, serde_json::Value>) -> DataResponse {
-        DataResponse { data }
-    }
-}
-
-pub async fn metadata_handler(
-    app_state: actix_web::web::Data<context::AppState>,
-    payload: actix_web::web::Json<MetadataRequestBody>,
-) -> impl actix_web::Responder {
-    let mut server_ctx = app_state.0.lock().unwrap();
-
-    match payload.into_inner() {
-        MetadataRequestBody::TrackTable(table) => {
-            match (*server_ctx).metadata_track_table(table.clone()) {
-                Ok(_) => MetadataResponse::Success(format!(
-                    "{} is now being tracked!",
-                    table.to_string()
-                )),
-                Err(err) => MetadataResponse::Error(err),
-            }
-        }
-        MetadataRequestBody::UntrackTable(table) => {
-            match (*server_ctx).metadata_untrack_table(table.clone()) {
-                Ok(_) => MetadataResponse::Success(format!(
-                    "{} has now been un-tracked!",
-                    table.to_string()
-                )),
-                Err(err) => MetadataResponse::Error(err),
-            }
-        }
-        MetadataRequestBody::ExportMetadata => {
-            MetadataResponse::Data((*server_ctx).get_metadata().clone())
-        }
-        MetadataRequestBody::ImportMetadata(md) => {
-            (*server_ctx).replace_metadata(&md);
-            MetadataResponse::Success("Imported metadata successfully!".to_string())
+            GraphQLResponse::Data(data) => HttpResponse::Ok().json(data),
+            GraphQLResponse::Error(error) => HttpResponse::Ok().json(error),
         }
     }
 }
@@ -131,7 +83,7 @@ fn fetch_result_from_query_fields<'a>(
     // many of the patterns, like Query, Selection Set and eventually Subscriptions!
     pg_client: &mut Client,
     metadata: &Metadata,
-) -> actix_web::HttpResponse {
+) -> Result<GQLResult, String> {
     let mut fields_map: IndexMap<FieldName, FieldInfo> = IndexMap::new();
 
     for set in qry_sel_set.items.iter() {
@@ -152,9 +104,8 @@ fn fetch_result_from_query_fields<'a>(
                         "order_by" => {
                             let str_field_names = field_names_to_name_list(&sub_fields);
                             if !is_order_by_keys_valid(&str_field_names, arg_value) {
-                                return actix_web::HttpResponse::Ok().json(ErrorResponse{
-                                    error: format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?} and should be used at most once", arg_value, str_field_names)
-                                });
+                                let err_msg = format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?} and should be used at most once", arg_value, str_field_names);
+                                return Err(err_msg);
                             }
                             let convert_to_object_arg = to_object_arg(
                                 arg_name.to_string(),
@@ -164,9 +115,7 @@ fn fetch_result_from_query_fields<'a>(
                             if let Ok(fa) = convert_to_object_arg {
                                 field_args.insert(fa.0, fa.1);
                             } else if let Err(e) = convert_to_object_arg {
-                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                    error: e.to_string(),
-                                });
+                                return Err(e.to_string());
                             }
                         }
                         "limit" | "offset" => {
@@ -174,9 +123,7 @@ fn fetch_result_from_query_fields<'a>(
                             if let Ok(fa) = convert_to_int_arg {
                                 field_args.insert(fa.0, fa.1);
                             } else if let Err(e) = convert_to_int_arg {
-                                return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                    error: e.to_string(),
-                                });
+                                return Err(e.to_string());
                             }
                         }
                         "distinct_on" => {
@@ -188,18 +135,14 @@ fn fetch_result_from_query_fields<'a>(
                                     if str_fields.contains(&fa.1.get_string()) {
                                         field_args.insert(fa.0, fa.1);
                                     } else {
-                                        return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                            error: format!(
+                                        return Err(format!(
                                             "The value for `distinct_on` should be one of: {:?}",
                                             str_fields
-                                        ),
-                                        });
+                                        ));
                                     }
                                 }
                                 Err(e) => {
-                                    return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                                        error: e.to_string(),
-                                    });
+                                    return Err(e.to_string());
                                 }
                             }
                         }
@@ -235,9 +178,7 @@ fn fetch_result_from_query_fields<'a>(
             }
             // NOTE: this error is encounted when the query fails at the DB
             Err(db_err) => {
-                return actix_web::HttpResponse::Ok().json(ErrorResponse {
-                    error: db_err.to_string(),
-                })
+                return Err(db_err.to_string());
             }
         }
     }
@@ -263,7 +204,7 @@ fn fetch_result_from_query_fields<'a>(
         }
     }
 
-    actix_web::HttpResponse::Ok().json(DataResponse::new(final_res))
+    Ok(final_res)
 }
 
 fn selection_set_fields_parser<'a>(
@@ -284,9 +225,9 @@ fn selection_set_fields_parser<'a>(
 // NOTE: Only GraphQL Queries and Selection Sets are supported.
 //       Mutations, Subscriptions will be supported eventually.
 pub async fn graphql_handler(
-    app_state: actix_web::web::Data<context::AppState>,
-    payload: actix_web::web::Json<GraphQLRequest>,
-) -> actix_web::HttpResponse {
+    app_state: web::Data<AppState>,
+    payload: web::Json<GraphQLRequest>,
+) -> impl Responder {
     let server_ctx = app_state.0.lock().unwrap();
     let mut pg_client = server_ctx.get_connection_pool().get().unwrap();
 
@@ -295,50 +236,39 @@ pub async fn graphql_handler(
         // gets matched/parsed. Similar to what Hasura does
         Ok(q) => match &q.definitions[0] {
             graphql_parser::query::Definition::Fragment(_) => {
-                actix_web::HttpResponse::Ok().json(ErrorResponse {
-                    error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                        "Fragments are not yet supported!".to_string(),
-                    ))
-                    .to_string(),
-                })
+                GraphQLResponse::error(String::from("Fragments are not supported"))
             }
             graphql_parser::query::Definition::Operation(op) => match op {
                 graphql_parser::query::OperationDefinition::Mutation(_) => {
-                    actix_web::HttpResponse::Ok().json(ErrorResponse {
-                        error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                            "Mutations are not yet supported!".to_string(),
-                        ))
-                        .to_string(),
-                    })
+                    GraphQLResponse::error(String::from("Mutations are not supported"))
                 }
                 graphql_parser::query::OperationDefinition::Subscription(_) => {
-                    actix_web::HttpResponse::Ok().json(ErrorResponse {
-                        error: error::GQLRSError::new(error::GQLRSErrorType::GenericError(
-                            "Subscriptions are not yet supported!".to_string(),
-                        ))
-                        .to_string(),
-                    })
+                    GraphQLResponse::error(String::from("Subscriptions are not supported"))
                 }
                 graphql_parser::query::OperationDefinition::Query(qry) => {
-                    fetch_result_from_query_fields(
-                        &qry.selection_set,
-                        &mut pg_client,
-                        server_ctx.get_metadata(),
-                    )
+                    return map_either(
+                        GraphQLResponse::error,
+                        GraphQLResponse::data,
+                        fetch_result_from_query_fields(
+                            &qry.selection_set,
+                            &mut pg_client,
+                            server_ctx.get_metadata(),
+                        ),
+                    );
                 }
                 graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                    fetch_result_from_query_fields(
-                        sel_set,
-                        &mut pg_client,
-                        server_ctx.get_metadata(),
-                    )
+                    return map_either(
+                        GraphQLResponse::error,
+                        GraphQLResponse::data,
+                        fetch_result_from_query_fields(
+                            sel_set,
+                            &mut pg_client,
+                            server_ctx.get_metadata(),
+                        ),
+                    );
                 }
             },
         },
-        Err(e) => actix_web::HttpResponse::Ok().json(ErrorResponse {
-            // NOTE: this is the error when no valid AST was generated
-            // by the parser or any other parser failures
-            error: e.to_string(),
-        }),
+        Err(e) => GraphQLResponse::error(e.to_string()),
     }
 }

@@ -5,13 +5,17 @@ mod context;
 mod db;
 mod error;
 mod gql_types;
+mod handlers;
 mod logger;
 mod metadata;
 mod options;
 mod routes;
-mod server;
 mod utils;
 mod websocket;
+
+// use graphql::graphql_handler;
+// use healthz::healthz_handler;
+// use metadata_handler::metadata_handler;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -65,8 +69,9 @@ mod tests {
 
     use crate::context::{AppState, ServerCtx};
     use crate::db::get_pg_pool;
+    use crate::handlers::metadata_handler;
+    use crate::handlers::{empty_query_variables, graphql_handler, GraphQLRequest};
     use crate::metadata::{Metadata, QualifiedTable};
-    use crate::server;
 
     const DEFAULT_DATABASE_URL: &str =
         "postgresql://postgres:postgrespassword@localhost:5432/postgres";
@@ -116,7 +121,7 @@ mod tests {
     // #[actix_rt::test]
     // async fn test_healthz_handler() {
     //     let req = test::TestRequest::default().to_http_request();
-    //     let resp = server::healthz_handler(req).await;
+    //     let resp = healthz_handler(req).await;
     //     assert_eq!(resp, "OK");
     // }
 
@@ -133,8 +138,8 @@ mod tests {
         let mut app = test::init_service(
             App::new().app_data(app_state).service(
                 web::scope("/v1")
-                    .route("/metadata", web::post().to(server::metadata_handler))
-                    .route("/graphql", web::post().to(server::graphql_handler)),
+                    .route("/metadata", web::post().to(metadata_handler))
+                    .route("/graphql", web::post().to(graphql_handler)),
             ),
         )
         .await;
@@ -176,16 +181,21 @@ mod tests {
             let test_file_path = get_graphql_test_file_path(test_dir);
             let query_str = read_test_file(&test_file_path);
 
-            let data: server::GraphQLRequest = server::GraphQLRequest {
+            let data = GraphQLRequest {
                 query: query_str,
-                variables: server::empty_query_variables(),
+                variables: empty_query_variables(),
             };
 
             let payload = serde_json::to_string(&data).unwrap();
 
             let req = get_test_request(GRAPHQL_ENDPOINT, payload).to_request();
 
-            let result: server::DataResponse = test::read_response_json(&mut app, req).await;
+            #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+            struct DataResponse {
+                data: indexmap::IndexMap<String, serde_json::Value>,
+            }
+
+            let result: DataResponse = test::read_response_json(&mut app, req).await;
             let result_json_str = serde_json::to_string_pretty(&result).expect(
                 format!(
                     "Failed to convert result to JSON string for {}: {:?}",

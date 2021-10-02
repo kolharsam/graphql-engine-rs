@@ -1,4 +1,4 @@
-.PHONY: test-clean test migrate fmt set-default-db lint
+.PHONY: test-clean test migrate fmt set-default-db lint build build-docs clean
 
 # Runs all the tests with output to STDOUT
 test:
@@ -23,3 +23,12 @@ lint:
 
 set-default-db:
 	export DATABASE_URL="postgres://postgres:postgrespassword@localhost:5432/postgres"
+
+build:
+	cargo build --release
+
+build-docs:
+	cargo doc --release
+
+clean:
+	cargo clean
