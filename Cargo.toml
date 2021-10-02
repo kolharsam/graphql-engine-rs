@@ -15,8 +15,11 @@ log = { version = "0.4", features = ["std"] }
 chrono = "0.4"
 convert_case = "0.4.0"
 serde_json = { version = "1.0", features = ["preserve_order"] }
+# donwgrading from "0.12.0" to "0.10.0" cos of https://github.com/actix/actix-web/issues/2121
+actix = "0.10.0"
 actix-web = "3"
 actix-service = "1.0.0"
+actix-web-actors = "3.0.0"
 actix-cors = "0.5.4"
 actix-rt = "2.2.0"
 futures = "0.3"
@@ -26,6 +29,7 @@ json = "0.12"
 indexmap = { version = "1.7.0", features = ["serde", "serde-1"] }
 thiserror = "1.0.26"
 anyhow = "1.0.43"
+uuid = { version = "0.8.2", features = ["serde", "v4"] }
 r2d2 = "0.8.9"
 r2d2_postgres = "0.18.1"
 

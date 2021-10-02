@@ -1,23 +1,21 @@
+use actix::Actor;
 use log::{debug, info, trace, warn};
 
 mod context;
 mod db;
 mod error;
 mod gql_types;
-#[path = "handlers/graphql.rs"]
-mod graphql;
-#[path = "handlers/healthz.rs"]
-mod healthz;
+mod handlers;
 mod logger;
 mod metadata;
-#[path = "handlers/metadata.rs"]
-mod metadata_handler;
 mod options;
+mod routes;
 mod utils;
+mod websocket;
 
-use graphql::graphql_handler;
-use healthz::healthz_handler;
-use metadata_handler::metadata_handler;
+// use graphql::graphql_handler;
+// use healthz::healthz_handler;
+// use metadata_handler::metadata_handler;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -28,6 +26,7 @@ async fn main() -> std::io::Result<()> {
 
     debug!("GraphQL-Engine-RS is being initialised...");
 
+    let ws_server = websocket::WebSocketServer::new().start();
     let serve_options = options::parsed_options();
     if serve_options.source_name == "default" {
         warn!("No source-name was provided, setting \"default\" as source-name.");
@@ -48,6 +47,7 @@ async fn main() -> std::io::Result<()> {
     actix_web::HttpServer::new(move || {
         actix_web::App::new()
             .app_data(app_state.clone())
+            .data(ws_server.clone())
             .wrap(actix_web::middleware::Logger::default())
             .wrap(
                 actix_cors::Cors::default()
@@ -55,15 +55,7 @@ async fn main() -> std::io::Result<()> {
                     .allowed_methods(vec!["GET", "POST", "OPTIONS"])
                     .max_age(3600),
             )
-            .service(
-                actix_web::web::resource("/healthz")
-                    .route(actix_web::web::get().to(healthz_handler)),
-            )
-            .service(
-                actix_web::web::scope("/v1")
-                    .route("/metadata", actix_web::web::post().to(metadata_handler))
-                    .route("/graphql", actix_web::web::post().to(graphql_handler)),
-            )
+            .configure(routes::routes)
             .default_service(actix_web::web::to(actix_web::HttpResponse::NotFound))
     })
     .bind(("127.0.0.1", serve_options.port))?
@@ -77,9 +69,9 @@ mod tests {
 
     use crate::context::{AppState, ServerCtx};
     use crate::db::get_pg_pool;
-    use crate::graphql::{empty_query_variables, graphql_handler, GraphQLRequest};
+    use crate::handlers::metadata_handler;
+    use crate::handlers::{empty_query_variables, graphql_handler, GraphQLRequest};
     use crate::metadata::{Metadata, QualifiedTable};
-    use crate::metadata_handler::metadata_handler;
 
     const DEFAULT_DATABASE_URL: &str =
         "postgresql://postgres:postgrespassword@localhost:5432/postgres";
