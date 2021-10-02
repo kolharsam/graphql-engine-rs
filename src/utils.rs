@@ -34,7 +34,7 @@ where
 /// Here the `either` in the function name is the name of the Haskell function `either`
 /// This is what the Haskell function `either` does:
 /// either :: (a -> c) -> (b -> c) -> Either a b -> c
-pub fn result_to_either<A, B, T, F, G>(err_fn: F, ok_fn: G, result: Result<A, B>) -> T
+pub fn map_either<A, B, T, F, G>(err_fn: F, ok_fn: G, result: Result<A, B>) -> T
 where
     F: Fn(B) -> T,
     G: Fn(A) -> T,

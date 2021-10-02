@@ -11,7 +11,7 @@ use crate::gql_types::{
     to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
 };
 use crate::metadata::Metadata;
-use crate::{context::AppState, db, utils};
+use crate::{context::AppState, db, utils::map_either};
 
 fn get_data_json<T>(data_arg: T) -> serde_json::Value
 where
@@ -246,7 +246,7 @@ pub async fn graphql_handler(
                     GraphQLResponse::error(String::from("Subscriptions are not supported"))
                 }
                 graphql_parser::query::OperationDefinition::Query(qry) => {
-                    return utils::result_to_either(
+                    return map_either(
                         GraphQLResponse::error,
                         GraphQLResponse::data,
                         fetch_result_from_query_fields(
@@ -257,7 +257,7 @@ pub async fn graphql_handler(
                     );
                 }
                 graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                    return utils::result_to_either(
+                    return map_either(
                         GraphQLResponse::error,
                         GraphQLResponse::data,
                         fetch_result_from_query_fields(
