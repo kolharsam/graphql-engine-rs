@@ -12,7 +12,7 @@ use crate::gql_types::{
     to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
 };
 use crate::metadata::{Metadata, QualifiedTable};
-use crate::{context, db, error};
+use crate::{context, db, error, utils};
 
 pub async fn healthz_handler(
     srv_ctx: actix_web::web::Data<context::ServerCtx>,
@@ -164,7 +164,7 @@ fn fetch_result_from_query_fields<'a>(
     // many of the patterns, like Query, Selection Set and eventually Subscriptions!
     pg_client: &mut Client,
     metadata: &Metadata,
-) -> impl Responder {
+) -> Result<GQLResult, String> {
     let mut fields_map: IndexMap<FieldName, FieldInfo> = IndexMap::new();
 
     for set in qry_sel_set.items.iter() {
@@ -185,9 +185,8 @@ fn fetch_result_from_query_fields<'a>(
                         "order_by" => {
                             let str_field_names = field_names_to_name_list(&sub_fields);
                             if !is_order_by_keys_valid(&str_field_names, arg_value) {
-                                return GraphQLResponse::error(
-                                    format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?} and should be used at most once", arg_value, str_field_names)
-                                );
+                                let err_msg = format!("Invalid argument values supplied to `order_by`: {}. The keys must be one off {:?} and should be used at most once", arg_value, str_field_names);
+                                return Err(err_msg);
                             }
                             let convert_to_object_arg = to_object_arg(
                                 arg_name.to_string(),
@@ -197,7 +196,7 @@ fn fetch_result_from_query_fields<'a>(
                             if let Ok(fa) = convert_to_object_arg {
                                 field_args.insert(fa.0, fa.1);
                             } else if let Err(e) = convert_to_object_arg {
-                                return GraphQLResponse::error(e.to_string());
+                                return Err(e.to_string());
                             }
                         }
                         "limit" | "offset" => {
@@ -205,7 +204,7 @@ fn fetch_result_from_query_fields<'a>(
                             if let Ok(fa) = convert_to_int_arg {
                                 field_args.insert(fa.0, fa.1);
                             } else if let Err(e) = convert_to_int_arg {
-                                return GraphQLResponse::error(e.to_string());
+                                return Err(e.to_string());
                             }
                         }
                         "distinct_on" => {
@@ -217,14 +216,14 @@ fn fetch_result_from_query_fields<'a>(
                                     if str_fields.contains(&fa.1.get_string()) {
                                         field_args.insert(fa.0, fa.1);
                                     } else {
-                                        return GraphQLResponse::error(format!(
+                                        return Err(format!(
                                             "The value for `distinct_on` should be one of: {:?}",
                                             str_fields
                                         ));
                                     }
                                 }
                                 Err(e) => {
-                                    return GraphQLResponse::error(e.to_string());
+                                    return Err(e.to_string());
                                 }
                             }
                         }
@@ -260,7 +259,7 @@ fn fetch_result_from_query_fields<'a>(
             }
             // NOTE: this error is encounted when the query fails at the DB
             Err(db_err) => {
-                return GraphQLResponse::error(db_err.to_string());
+                return Err(db_err.to_string());
             }
         }
     }
@@ -286,7 +285,7 @@ fn fetch_result_from_query_fields<'a>(
         }
     }
 
-    GraphQLResponse::data(final_res)
+    Ok(final_res)
 }
 
 fn selection_set_fields_parser<'a>(
@@ -309,7 +308,7 @@ fn selection_set_fields_parser<'a>(
 pub async fn graphql_handler(
     app_state: actix_web::web::Data<context::AppState>,
     payload: actix_web::web::Json<GraphQLRequest>,
-) -> actix_web::web::HttpResponse {
+) -> impl Responder {
     let server_ctx = app_state.0.lock().unwrap();
     let mut pg_client = server_ctx.get_connection_pool().get().unwrap();
 
@@ -318,37 +317,39 @@ pub async fn graphql_handler(
         // gets matched/parsed. Similar to what Hasura does
         Ok(q) => match &q.definitions[0] {
             graphql_parser::query::Definition::Fragment(_) => {
-                return unsupported_error_response("Fragments are not yet supported!");
+                GraphQLResponse::error(String::from("Fragments are not supported"))
             }
             graphql_parser::query::Definition::Operation(op) => match op {
                 graphql_parser::query::OperationDefinition::Mutation(_) => {
-                    return unsupported_error_response("Mutations are not yet supported!");
+                    GraphQLResponse::error(String::from("Mutations are not supported"))
                 }
                 graphql_parser::query::OperationDefinition::Subscription(_) => {
-                    return unsupported_error_response("Subscriptions are not yet supported!");
+                    GraphQLResponse::error(String::from("Subscriptions are not supported"))
                 }
                 graphql_parser::query::OperationDefinition::Query(qry) => {
-                    return fetch_result_from_query_fields(
-                        &qry.selection_set,
-                        &mut pg_client,
-                        server_ctx.get_metadata(),
+                    return utils::result_to_either(
+                        GraphQLResponse::error,
+                        GraphQLResponse::data,
+                        fetch_result_from_query_fields(
+                            &qry.selection_set,
+                            &mut pg_client,
+                            server_ctx.get_metadata(),
+                        ),
                     );
                 }
                 graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                    return fetch_result_from_query_fields(
-                        sel_set,
-                        &mut pg_client,
-                        server_ctx.get_metadata(),
+                    return utils::result_to_either(
+                        GraphQLResponse::error,
+                        GraphQLResponse::data,
+                        fetch_result_from_query_fields(
+                            sel_set,
+                            &mut pg_client,
+                            server_ctx.get_metadata(),
+                        ),
                     );
                 }
             },
         },
-        Err(e) => {
-            return GraphQLResponse::error(e.to_string());
-        }
+        Err(e) => GraphQLResponse::error(e.to_string()),
     }
-}
-
-fn unsupported_error_response(msg: &str) -> actix_web::HttpResponse {
-    GraphQLResponse::error(String::from(msg))
 }
