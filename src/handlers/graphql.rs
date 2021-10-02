@@ -8,7 +8,7 @@ use serde_json::json;
 
 use crate::gql_types::{
     field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
-    to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
+    to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgTypeWithOrderBy,
 };
 use crate::metadata::Metadata;
 use crate::{context::AppState, db, utils::map_result};
@@ -93,7 +93,7 @@ fn fetch_result_from_query_fields<'a>(
             let table_name = field.name.to_string();
             let alias = field.alias.map(String::from);
             let root_field_name = FieldName::new(&table_name, alias);
-            let mut field_args: IndexMap<String, GQLArgType<OrderByOptions>> = IndexMap::new();
+            let mut field_args: IndexMap<String, GQLArgTypeWithOrderBy> = IndexMap::new();
             let sub_fields = selection_set_fields_parser(&field.selection_set);
 
             if !field.arguments.is_empty() {
