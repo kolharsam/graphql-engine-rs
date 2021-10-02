@@ -78,6 +78,7 @@ mod tests {
     use crate::context::{AppState, ServerCtx};
     use crate::db::get_pg_pool;
     use crate::graphql::{empty_query_variables, graphql_handler, GraphQLRequest};
+    use crate::healthz::healthz_handler;
     use crate::metadata::{Metadata, QualifiedTable};
     use crate::metadata_handler::metadata_handler;
 
@@ -87,6 +88,7 @@ mod tests {
     const PATH_TEST_BASE: &str = "test";
     const QUERY_FILE_NAME: &str = "query.graphql";
     const RESPONSE_FILE_NAME: &str = "response.json";
+    const HEALTHZ_ENDPOINT: &str = "/healthz";
     const GRAPHQL_ENDPOINT: &str = "/v1/graphql";
     const METADATA_ENDPOINT: &str = "/v1/metadata";
     const CONTENT_TYPE_KEY: &str = "Content-Type";
@@ -123,42 +125,61 @@ mod tests {
             .set_payload(payload)
     }
 
-    // NOTE: Disabling this test for now since there's
-    // much work to be done on the server context part
-
-    // #[actix_rt::test]
-    // async fn test_healthz_handler() {
-    //     let req = test::TestRequest::default().to_http_request();
-    //     let resp = healthz_handler(req).await;
-    //     assert_eq!(resp, "OK");
-    // }
-
     // NOTE/TODO/FIXME: This test might've become too tightly coupled at this point
     // We need to make sure that we can test as many smaller aspects of this not just
     // the overall picture. This can eventually become a huge pain point
     #[actix_rt::test]
-    async fn test_metadata_and_graphql_handlers() {
+    async fn test_handlers() {
         let default_pg_conn_str = String::from(DEFAULT_DATABASE_URL);
         let connection_string = std::env::var("DATABASE_URL").unwrap_or(default_pg_conn_str);
         let server_ctx = ServerCtx::new(get_pg_pool(&connection_string).unwrap(), "default");
         let app_state = AppState::new_state(server_ctx);
 
         let mut app = test::init_service(
-            App::new().app_data(app_state).service(
-                web::scope("/v1")
-                    .route("/metadata", web::post().to(metadata_handler))
-                    .route("/graphql", web::post().to(graphql_handler)),
-            ),
+            App::new()
+                .app_data(app_state)
+                .service(web::resource("/healthz").route(actix_web::web::get().to(healthz_handler)))
+                .service(
+                    web::scope("/v1")
+                        .route("/metadata", web::post().to(metadata_handler))
+                        .route("/graphql", web::post().to(graphql_handler)),
+                ),
         )
         .await;
 
+        // test the healthz endpoint
+
+        #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+        struct HealthzResponse {
+            status: String,
+        }
+
+        let healthz_request = test::TestRequest::get().uri(HEALTHZ_ENDPOINT).to_request();
+        let response: HealthzResponse = test::read_response_json(&mut app, healthz_request).await;
+        assert_eq!(
+            response,
+            HealthzResponse {
+                status: String::from("OK")
+            }
+        );
+
+        // test `graphql` and `metadata` handlers
+
         // Set up Metadata
+
+        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        struct MetadataSuccess {
+            success: bool,
+        }
 
         let metadata_request_files = std::fs::read_dir("test/metadata/track_table")
             .expect("Failed to access the `test/metadata/track_table` dir.");
 
         for metadata_request_file in metadata_request_files {
             let metadata_request_filepath = metadata_request_file.unwrap().path();
+            if metadata_request_filepath.is_dir() {
+                continue;
+            }
             let metadata_request_payload = std::fs::read_to_string(
                 metadata_request_filepath.clone(),
             )
@@ -166,7 +187,15 @@ mod tests {
 
             let metadata_request =
                 get_test_request(METADATA_ENDPOINT, metadata_request_payload).to_request();
-            let _test_response = test::read_response(&mut app, metadata_request).await;
+            let test_response: MetadataSuccess =
+                test::read_response_json(&mut app, metadata_request).await;
+            assert_eq!(
+                test_response,
+                MetadataSuccess {
+                    success: true,
+                    // TODO: check for the message too
+                }
+            );
         }
 
         // Test the graphql queries
@@ -250,7 +279,9 @@ mod tests {
 
             let metadata_request =
                 get_test_request(METADATA_ENDPOINT, metadata_request_payload).to_request();
-            let _test_response = test::read_response(&mut app, metadata_request).await;
+            let test_response: MetadataSuccess =
+                test::read_response_json(&mut app, metadata_request).await;
+            assert_eq!(test_response, MetadataSuccess { success: true });
         }
 
         // test `export_metadata` after `untrack_table`
@@ -269,7 +300,9 @@ mod tests {
         .expect("failed to read file at test/metadata/import_metadata/import_metadata.json");
         let import_metadata_request =
             get_test_request(METADATA_ENDPOINT, import_metadata_str).to_request();
-        let _test_res = test::read_response(&mut app, import_metadata_request).await;
+        let test_res: MetadataSuccess =
+            test::read_response_json(&mut app, import_metadata_request).await;
+        assert_eq!(test_res, MetadataSuccess { success: true });
 
         // test `export_metadata` after `import_metadata`
         let export_md_req =
