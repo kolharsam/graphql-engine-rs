@@ -194,7 +194,12 @@ mod tests {
 
             let req = get_test_request(GRAPHQL_ENDPOINT, payload).to_request();
 
-            let result: server::DataResponse = test::read_response_json(&mut app, req).await;
+            #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+            struct DataResponse {
+                data: indexmap::IndexMap<String, serde_json::Value>,
+            }
+
+            let result: DataResponse = test::read_response_json(&mut app, req).await;
             let result_json_str = serde_json::to_string_pretty(&result).expect(
                 format!(
                     "Failed to convert result to JSON string for {}: {:?}",
