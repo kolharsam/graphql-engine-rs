@@ -29,7 +29,7 @@ fn add_int_arg_to_query(
     }
 }
 
-// This is a helper to construct the SQL query to fetch results from the database
+/// This is a helper to construct the SQL query to fetch results from the database
 pub fn get_rows_gql_query(
     client: &mut Client,
     root_field: &FieldName,
@@ -38,6 +38,8 @@ pub fn get_rows_gql_query(
 ) -> Result<Row, error::GQLRSError> {
     let mut query = String::new();
     let query_has_args = !field_info.args().is_empty();
+
+    // ----- Query construction starts here -----
 
     // NOTE: since we're using json_agg here, the DB has to be of v9 or over
     query.push_str(
@@ -130,7 +132,7 @@ pub fn get_rows_gql_query(
 
     query.push_str(") as data");
 
-    // ----- Query construction ends
+    // ----- Query construction ends here -----
 
     // ----- Run Query
 
