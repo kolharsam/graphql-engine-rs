@@ -4,8 +4,8 @@ version = 1
 
 [merge]
 require_automerge_label = true
-automerge_label = ["automerge", "🚀 it!"]
-blocking_labels = ["block", "🚫 it!"]
+automerge_label = ["automerge", "🚀"]
+blocking_labels = ["block", "🚫"]
 method = "squash"
 delete_branch_on_merge = true
 
