@@ -31,13 +31,14 @@ where
     count
 }
 
-/// Here the `either` in the function name is the name of the Haskell function `either`
+/// this method is based on the Haskell function `either`
+/// `Either` is analogous to `Result` in Rust
 /// This is what the Haskell function `either` does:
 /// either :: (a -> c) -> (b -> c) -> Either a b -> c
 pub fn map_result<A, B, T, F, G>(err_fn: F, ok_fn: G, result: Result<A, B>) -> T
 where
-    F: Fn(B) -> T,
-    G: Fn(A) -> T,
+    F: FnOnce(B) -> T,
+    G: FnOnce(A) -> T,
 {
     match result {
         Ok(ok) => ok_fn(ok),
