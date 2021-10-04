@@ -166,7 +166,7 @@ fn fetch_result_from_query_fields<'a>(
         let root_field_name = field_info.0;
         let fields_info_struct = field_info.1;
 
-        let query_res = db::get_rows_gql_query(
+        let query_res = db::run_query(
             pg_client,
             root_field_name,
             fields_info_struct,

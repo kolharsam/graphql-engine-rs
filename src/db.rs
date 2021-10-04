@@ -29,8 +29,9 @@ fn add_int_arg_to_query(
     }
 }
 
-/// This is a helper to construct the SQL query to fetch results from the database
-pub fn get_rows_gql_query(
+/// `run_query` is a helper to construct the SQL query based on the given GraphQL
+/// query. This function will also help to run the SQL query and provide the results.
+pub fn run_query(
     client: &mut Client,
     root_field: &FieldName,
     field_info: &FieldInfo,
