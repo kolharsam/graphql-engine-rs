@@ -74,6 +74,7 @@ async fn main() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use actix_web::{test, web, App};
+    use serde::{Serialize, Deserialize};
 
     use crate::context::{AppState, ServerCtx};
     use crate::db::get_pg_pool;
@@ -149,7 +150,7 @@ mod tests {
 
         // test the healthz endpoint
 
-        #[derive(serde::Deserialize, serde::Serialize, PartialEq, Debug)]
+        #[derive(serde::Deserialize, Serialize, PartialEq, Debug)]
         struct HealthzResponse {
             status: String,
         }
@@ -167,7 +168,7 @@ mod tests {
 
         // Set up Metadata
 
-        #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
+        #[derive(Serialize, Deserialize, Debug, PartialEq)]
         struct MetadataSuccess {
             success: bool,
         }
@@ -227,7 +228,7 @@ mod tests {
 
             let req = get_test_request(GRAPHQL_ENDPOINT, payload).to_request();
 
-            #[derive(serde::Deserialize, serde::Serialize, Clone, Debug)]
+            #[derive(Deserialize, Serialize, Clone, Debug)]
             struct DataResponse {
                 data: indexmap::IndexMap<String, serde_json::Value>,
             }
