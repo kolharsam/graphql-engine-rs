@@ -74,7 +74,7 @@ async fn main() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use actix_web::{test, web, App};
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
 
     use crate::context::{AppState, ServerCtx};
     use crate::db::get_pg_pool;
