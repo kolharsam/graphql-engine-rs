@@ -94,7 +94,7 @@ pub enum GQLArgType<T> {
     Object(IndexMap<String, T>),
 }
 
-pub type GQLArgTypeWithOrderBy = GQLArgType<OrderByOptions>;
+pub type GQLArgTypeWithOrderBy = GQLArgType<OrderByDirection>;
 type FieldArguments = indexmap::IndexMap<String, GQLArgTypeWithOrderBy>;
 
 impl<T> GQLArgType<T> {
@@ -164,9 +164,13 @@ impl FieldInfo {
 pub fn to_string_arg<'a>(
     arg_name: String,
     arg_val: &graphql_parser::query::Value<'a, &'a str>,
-) -> Result<(String, GQLArgTypeWithOrderBy), error::GQLRSError> {
+) -> Result<GQLArgTypeWithOrderBy, error::GQLRSError> {
     if let graphql_parser::query::Value::Enum(st) = arg_val {
-        return Ok((arg_name, GQLArgType::String(st.to_string())));
+        return Ok(GQLArgType::String(st.to_string()));
+    } else if let graphql_parser::query::Value::Variable(var_name) = arg_val {
+        // TODO: process the arg here and return the required value
+        let var_val = "";
+        return Ok(GQLArgType::String(var_val.to_string()));
     }
 
     Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
@@ -187,6 +191,10 @@ pub fn to_int_arg<'a>(
                 )))
             }
         }
+    } else if let graphql_parser::query::Value::Variable(var_name) = arg_val {
+        // TODO: process the arg here and return the required value
+        let var_val = "";
+        return Ok((arg_name, GQLArgType::Int(var_val.parse::<i64>().unwrap())));
     }
 
     Err(error::GQLRSError::new(error::GQLRSErrorType::GenericError(
@@ -258,7 +266,7 @@ pub fn to_object_arg<'a, T>(
 
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
-pub enum OrderByOptions {
+pub enum OrderByDirection {
     Asc,
     AscNullsFirst,
     AscNullsLast,
@@ -267,38 +275,44 @@ pub enum OrderByOptions {
     DescNullsLast,
 }
 
-impl OrderByOptions {
+impl OrderByDirection {
     pub fn to_sql(&self) -> &str {
         match self {
-            OrderByOptions::Asc => "ASC",
-            OrderByOptions::AscNullsFirst => "ASC NULLS FIRST",
-            OrderByOptions::AscNullsLast => "ASC NULLS LAST",
-            OrderByOptions::Desc => "DESC",
-            OrderByOptions::DescNullsFirst => "DESC NULLS FIRST",
-            OrderByOptions::DescNullsLast => "DESC NULLS LAST",
+            OrderByDirection::Asc => "ASC",
+            OrderByDirection::AscNullsFirst => "ASC NULLS FIRST",
+            OrderByDirection::AscNullsLast => "ASC NULLS LAST",
+            OrderByDirection::Desc => "DESC",
+            OrderByDirection::DescNullsFirst => "DESC NULLS FIRST",
+            OrderByDirection::DescNullsLast => "DESC NULLS LAST",
         }
     }
 }
 
-pub fn from_parser_value_to_order_by_option<'a>(
+pub fn from_parsed_value_to_order_by_direction<'a>(
     val: graphql_parser::query::Value<'a, &'a str>,
-) -> Option<OrderByOptions> {
-    if let graphql_parser::query::Value::Enum(str_val) = val {
-        return to_order_by_option_value(str_val);
+) -> Option<OrderByDirection> {
+    match val {
+        graphql_parser::query::Value::Enum(str_val) => {
+            return to_order_by_option_value(str_val);
+        }
+        graphql_parser::query::Value::Variable(str_var_name) => {
+            // TODO: make sure that we get the right value here
+            let var_value = "";
+            return to_order_by_option_value(var_value);
+        }
+        _ => None,
     }
-
-    None
 }
 
 // TODO: use `serde` for this purpose instead
-fn to_order_by_option_value(v: &str) -> Option<OrderByOptions> {
+fn to_order_by_option_value(v: &str) -> Option<OrderByDirection> {
     match v {
-        "asc" => Some(OrderByOptions::Asc),
-        "asc_nulls_first" => Some(OrderByOptions::AscNullsFirst),
-        "asc_nulls_last" => Some(OrderByOptions::AscNullsLast),
-        "desc" => Some(OrderByOptions::Desc),
-        "desc_nulls_first" => Some(OrderByOptions::DescNullsFirst),
-        "desc_nulls_last" => Some(OrderByOptions::DescNullsLast),
+        "asc" => Some(OrderByDirection::Asc),
+        "asc_nulls_first" => Some(OrderByDirection::AscNullsFirst),
+        "asc_nulls_last" => Some(OrderByDirection::AscNullsLast),
+        "desc" => Some(OrderByDirection::Desc),
+        "desc_nulls_first" => Some(OrderByDirection::DescNullsFirst),
+        "desc_nulls_last" => Some(OrderByDirection::DescNullsLast),
         _ => None,
     }
 }
