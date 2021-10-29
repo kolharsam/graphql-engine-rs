@@ -53,17 +53,16 @@ pub async fn metadata_handler(
     match payload.into_inner() {
         MetadataRequestBody::TrackTable(table) => {
             match (*server_ctx).metadata_track_table(table.clone()) {
-                Ok(_) => MetadataResponse::Success(format!(
-                    "{} is now being tracked!",
-                    table.to_string()
-                )),
+                Ok(_) => {
+                    MetadataResponse::Success(format!("{} is now being tracked", table.to_string()))
+                }
                 Err(err) => MetadataResponse::Error(err),
             }
         }
         MetadataRequestBody::UntrackTable(table) => {
             match (*server_ctx).metadata_untrack_table(table.clone()) {
                 Ok(_) => MetadataResponse::Success(format!(
-                    "{} has now been un-tracked!",
+                    "{} has now been un-tracked",
                     table.to_string()
                 )),
                 Err(err) => MetadataResponse::Error(err),
@@ -74,7 +73,7 @@ pub async fn metadata_handler(
         }
         MetadataRequestBody::ImportMetadata(md) => {
             (*server_ctx).replace_metadata(&md);
-            MetadataResponse::Success("Imported metadata successfully!".to_string())
+            MetadataResponse::Success(String::from("Imported metadata successfully"))
         }
     }
 }

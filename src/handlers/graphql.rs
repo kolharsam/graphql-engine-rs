@@ -1,17 +1,16 @@
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use indexmap::IndexMap;
 use log::warn;
-use postgres::types::Json;
 use postgres::{Client, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::gql_types::{
-    field_names_to_name_list, from_parser_value_to_order_by_option, is_order_by_keys_valid,
-    to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgType, OrderByOptions,
+    field_names_to_name_list, from_parsed_value_to_order_by_direction, is_order_by_keys_valid,
+    to_int_arg, to_object_arg, to_string_arg, FieldInfo, FieldName, GQLArgTypeWithOrderBy,
 };
 use crate::metadata::Metadata;
-use crate::{context::AppState, db, utils::map_either};
+use crate::{context::AppState, db, utils::map_result};
 
 fn get_data_json<T>(data_arg: T) -> serde_json::Value
 where
@@ -62,8 +61,10 @@ impl actix_web::Responder for GraphQLResponse {
     }
 }
 
+type GraphQLVariables = IndexMap<String, String>;
+
 #[inline(always)]
-pub fn empty_query_variables() -> IndexMap<String, String> {
+pub fn empty_query_variables() -> GraphQLVariables {
     IndexMap::new()
 }
 
@@ -71,7 +72,7 @@ pub fn empty_query_variables() -> IndexMap<String, String> {
 pub struct GraphQLRequest {
     pub query: String,
     #[serde(default = "empty_query_variables")]
-    pub variables: IndexMap<String, String>,
+    pub variables: GraphQLVariables,
 }
 
 type GQLResult = IndexMap<String, serde_json::Value>;
@@ -83,6 +84,8 @@ fn fetch_result_from_query_fields<'a>(
     // many of the patterns, like Query, Selection Set and eventually Subscriptions!
     pg_client: &mut Client,
     metadata: &Metadata,
+    variable_definitions: Option<Vec<graphql_parser::query::VariableDefinition<'a, &'a str>>>,
+    variables: Option<GraphQLVariables>,
 ) -> Result<GQLResult, String> {
     let mut fields_map: IndexMap<FieldName, FieldInfo> = IndexMap::new();
 
@@ -93,7 +96,7 @@ fn fetch_result_from_query_fields<'a>(
             let table_name = field.name.to_string();
             let alias = field.alias.map(String::from);
             let root_field_name = FieldName::new(&table_name, alias);
-            let mut field_args: IndexMap<String, GQLArgType<OrderByOptions>> = IndexMap::new();
+            let mut field_args: IndexMap<String, GQLArgTypeWithOrderBy> = IndexMap::new();
             let sub_fields = selection_set_fields_parser(&field.selection_set);
 
             if !field.arguments.is_empty() {
@@ -110,7 +113,7 @@ fn fetch_result_from_query_fields<'a>(
                             let convert_to_object_arg = to_object_arg(
                                 arg_name.to_string(),
                                 arg_value,
-                                from_parser_value_to_order_by_option,
+                                from_parsed_value_to_order_by_direction,
                             );
                             if let Ok(fa) = convert_to_object_arg {
                                 field_args.insert(fa.0, fa.1);
@@ -130,10 +133,10 @@ fn fetch_result_from_query_fields<'a>(
                             let convert_to_string_arg =
                                 to_string_arg(arg_name.to_string(), arg_value);
                             match convert_to_string_arg {
-                                Ok(fa) => {
+                                Ok(distinct_col_name) => {
                                     let str_fields = field_names_to_name_list(&sub_fields);
-                                    if str_fields.contains(&fa.1.get_string()) {
-                                        field_args.insert(fa.0, fa.1);
+                                    if str_fields.contains(&distinct_col_name.get_string()) {
+                                        field_args.insert(arg_name.to_string(), distinct_col_name);
                                     } else {
                                         return Err(format!(
                                             "The value for `distinct_on` should be one of: {:?}",
@@ -162,21 +165,19 @@ fn fetch_result_from_query_fields<'a>(
     }
 
     let mut result_rows: Vec<Row> = Vec::new();
-    for field_info in fields_map.iter() {
-        let root_field_name = field_info.0;
-        let fields_info_struct = field_info.1;
 
-        let query_res = db::get_rows_gql_query(
+    for field_info in fields_map.iter() {
+        let (root_field_name, current_field_info) = field_info;
+
+        match db::run_query(
             pg_client,
             root_field_name,
-            fields_info_struct,
+            current_field_info,
             metadata.to_owned(),
-        );
-        match query_res {
+        ) {
             Ok(db_res) => {
                 result_rows.push(db_res);
             }
-            // NOTE: this error is encounted when the query fails at the DB
             Err(db_err) => {
                 return Err(db_err.to_string());
             }
@@ -186,13 +187,12 @@ fn fetch_result_from_query_fields<'a>(
     let mut final_res: GQLResult = IndexMap::new();
 
     for res_row in result_rows.iter() {
-        // FIXME: can be a potential point of failure
+        // NOTE: Writing it in this manner is fine for now since the query we're
+        // running is a JSON value with just one row being fetched from the DB
         let root_field_name = res_row.columns()[0].name();
-        let query_result: Result<Json<serde_json::Value>, postgres::Error> =
-            res_row.try_get(root_field_name);
-        match query_result {
+        match res_row.try_get(root_field_name) {
             Ok(result) => {
-                final_res.insert(root_field_name.to_string(), result.0);
+                final_res.insert(root_field_name.to_string(), result);
             }
             // NOTE: this error is reported when we encounter no rows or nulls
             Err(_err) => {
@@ -230,6 +230,7 @@ pub async fn graphql_handler(
 ) -> impl Responder {
     let server_ctx = app_state.0.lock().unwrap();
     let mut pg_client = server_ctx.get_connection_pool().get().unwrap();
+    let request_has_variables = !payload.variables.is_empty();
 
     match graphql_parser::parse_query::<&str>(&payload.query) {
         // NOTE: We only execute the first query/mutation/subscription that
@@ -246,24 +247,40 @@ pub async fn graphql_handler(
                     GraphQLResponse::error(String::from("Subscriptions are not supported"))
                 }
                 graphql_parser::query::OperationDefinition::Query(qry) => {
-                    return map_either(
+                    let var_defs = &qry.variable_definitions;
+                    let query_has_no_variable_defs = var_defs.is_empty();
+
+                    if !query_has_no_variable_defs && !request_has_variables {
+                        return GraphQLResponse::error(String::from("Invalid Query: The requested query had variable definitions but no values were found"));
+                    } else if query_has_no_variable_defs && request_has_variables {
+                        return GraphQLResponse::error(String::from("Invalid Query: The requested query has no variable definitions. Refrain from passing variable values"));
+                    }
+
+                    let (vars_val, vars) =
+                        get_vars_info_from_query(qry.clone(), &payload.variables);
+
+                    return map_result(
                         GraphQLResponse::error,
                         GraphQLResponse::data,
                         fetch_result_from_query_fields(
                             &qry.selection_set,
                             &mut pg_client,
                             server_ctx.get_metadata(),
+                            vars_val,
+                            vars,
                         ),
                     );
                 }
                 graphql_parser::query::OperationDefinition::SelectionSet(sel_set) => {
-                    return map_either(
+                    return map_result(
                         GraphQLResponse::error,
                         GraphQLResponse::data,
                         fetch_result_from_query_fields(
                             sel_set,
                             &mut pg_client,
                             server_ctx.get_metadata(),
+                            None,
+                            None,
                         ),
                     );
                 }
@@ -271,4 +288,25 @@ pub async fn graphql_handler(
         },
         Err(e) => GraphQLResponse::error(e.to_string()),
     }
+}
+
+fn get_vars_info_from_query<'a>(
+    query_ast: graphql_parser::query::Query<'a, &'a str>,
+    req_vars: &GraphQLVariables,
+) -> (
+    Option<Vec<graphql_parser::query::VariableDefinition<'a, &'a str>>>,
+    Option<GraphQLVariables>,
+) {
+    let mut vars: Option<GraphQLVariables> = None;
+    let mut var_defs: Option<Vec<graphql_parser::query::VariableDefinition<'a, &'a str>>> = None;
+
+    if !req_vars.is_empty() {
+        vars = Some(req_vars.to_owned());
+    }
+
+    if !query_ast.variable_definitions.is_empty() {
+        var_defs = Some(query_ast.variable_definitions);
+    }
+
+    (var_defs, vars)
 }
