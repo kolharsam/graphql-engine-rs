@@ -1,3 +1,4 @@
+[![Board Status](https://dev.azure.com/kolharsam/fe7c384b-88c9-432a-b06c-e930b83bd6a0/39a97781-2ff6-4144-87ec-c14e36094309/_apis/work/boardbadge/6ee40c04-0147-4e72-bc83-73f47e8e9e55)](https://dev.azure.com/kolharsam/fe7c384b-88c9-432a-b06c-e930b83bd6a0/_boards/board/t/39a97781-2ff6-4144-87ec-c14e36094309/Microsoft.RequirementCategory)
 # graphql-engine-rs
 
 [![Build & Test Workflow badge](https://github.com/kolharsam/graphql-engine-rs/actions/workflows/rust.yml/badge.svg?branch=main)](https://github.com/kolharsam/graphql-engine-rs/actions/workflows/rust.yml)
